@@ -43,9 +43,10 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Verification
 
-- CI run 35646979094 at `3eb7de4` is green on all three jobs: `Rust (ubuntu-latest)`,
-  `Rust (windows-latest)` and `Interface`. That covers formatting, clippy with warnings denied,
-  the 22 tests in `lumen-source`, and the headless pipeline run on both platforms.
+- CI run 35647599786 at `97ea601` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
+  `Interface`. That covers formatting, clippy with warnings denied, the 22 tests in `lumen-source`,
+  and the headless pipeline run on both platforms. `3eb7de4` is the last commit that touched the
+  Rust workspace; everything after it is documentation.
 - Getting there took four diagnosed failures: three compile errors (an elided lifetime in a struct
   field, an anonymous lifetime in a return position with several input lifetimes, an `unused_mut`),
   three `clippy::vec_init_then_push` findings in the tests, and two formatting differences.
