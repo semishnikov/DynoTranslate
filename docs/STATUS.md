@@ -53,12 +53,20 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
     just outside the text, the foreground the commonest colour inside it that is not that
     background, with a legibility fallback when a block has no ink of its own to measure.
   - 30 unit tests, 935 lines, no platform code.
+- **M2, pipeline wiring.** The harness now runs the real path instead of a stand-in:
+  - a scripted scene carries the text it stands for, and `SceneTextSource` reports it the way a
+    recognition engine would, frame by frame;
+  - `lumen-pipeline` reads, merges, analyses and composes, so the code the benchmarks measure is
+    the code the product will run;
+  - the report lists the text each frame produced, with its box, alongside the timings.
+  - A plain PNG still gets one invented block per changed region, because no engine reads an image
+    yet. 13 harness tests, one of them asserting the scene's own words reach the report.
 
 ## Verification
 
-- CI run 35653140418 at `ceff233` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
-  `Interface`: formatting, clippy with warnings denied, the 22 tests in `lumen-source` and the 30
-  in `lumen-layout`, and the headless pipeline run on both platforms.
+- CI run 35654766114 at `f28b70c` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
+  `Interface`: formatting, clippy with warnings denied, all 123 workspace tests, and the headless
+  pipeline run on both platforms.
 - `lumen-layout` is portable, so every line of it is compiled, linted and tested on Linux as well
   as on Windows. The classification thresholds are pinned by tests rather than left to judgement.
 - `lumen-source/src/windows.rs` compiles only on `windows-latest` and has no tests of its own: it
@@ -66,15 +74,18 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   Windows".
 - Neither crate has been run against a real application, and no real screenshot has been through
   the layout analysis. The classification is verified against synthetic geometry only.
+- The pipeline artifact cannot be downloaded from this environment (`gh run download` fails with
+  `EOF` on `productionresultssa2.blob.core.windows.net`), so the report numbers were not read back;
+  the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
+  are what confirms the wiring.
 
 ## Next
 
-1. Wire a source and the layout analysis into `lumen-pipeline`, replacing the stand-in that emits
-   one block per changed region, and report the blocks in the JSON output.
-2. **M2, language identification.** Unicode script analysis first, then text-level detection, with
+1. **M2, language identification.** Unicode script analysis first, then text-level detection, with
    per-application stickiness and hysteresis. Not started.
-3. **M2, corpus generator.** Synthetic scenes across fonts, scripts and backgrounds with CER
+2. **M2, corpus generator.** Synthetic scenes across fonts, scripts and backgrounds with CER
    thresholds enforced in CI. Not started.
+3. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
 4. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
    in M4.
 
@@ -83,8 +94,9 @@ it carries are complete.
 
 ## Known limitations
 
-- The harness still synthesises one overlay block per changed region. The source and layout stages
-  exist and are tested but are not wired into it yet.
+- The harness reads the whole frame on every pass, so text that stopped moving is not forgotten.
+  Skipping work on unchanged tiles needs the previous pass to be reusable, which is M4.
+- Recognition of a plain PNG is still the region stand-in; no engine reads an image yet.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces
   it, as recorded in ADR 0003.
 - There is no `LICENSE` file in the repository. See the open decisions in `docs/PLAN.md`.
