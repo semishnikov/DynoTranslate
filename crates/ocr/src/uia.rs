@@ -12,6 +12,10 @@ use lumen_core::Rect;
 use crate::language::identify;
 use crate::source::{TextOrigin, TextSpan};
 
+// TEMPORARY diagnosis probe: force a designed windows-only failure to test the shim channel.
+#[cfg(windows)]
+compile_error!("SHIM-PROBE");
+
 /// How many elements one snapshot may describe. A crowded desktop is truncated rather than walked
 /// in full: the visible foreground window's text matters more than the shell's.
 pub const MAX_ELEMENTS: usize = 512;
