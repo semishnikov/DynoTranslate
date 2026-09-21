@@ -39,7 +39,7 @@ impl SceneBlock {
     }
 
     fn visible_at(&self, frame: usize) -> bool {
-        frame >= self.appears_at && self.disappears_at.is_none_or(|end| frame < end)
+        frame >= self.appears_at && self.disappears_at.map_or(true, |end| frame < end)
     }
 }
 

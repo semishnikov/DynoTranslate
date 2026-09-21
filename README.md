@@ -44,3 +44,23 @@ npm run dev
 - `docs/ARCHITECTURE.md` — pipeline layers and where platform code is allowed
 - `docs/adr/` — architecture decision records
 - `docs/STATUS.md` — what is done, what is next, what is blocked
+
+## Repository layout
+
+```
+app/                 desktop interface (React, TypeScript, Vite)
+crates/core/         frame model, change detection, capture scheduling
+crates/capture/      capture sources behind one trait
+crates/overlay/      overlay compositor and presentation surfaces
+crates/cli/          headless pipeline harness
+docs/                plan, architecture, decision records, CI workflow
+```
+
+Run the pipeline without a display:
+
+```
+cargo run --bin lumen-pipeline -- --scene menu --out-dir pipeline-out
+```
+
+It writes one overlay PNG per frame and a `report.json` with change regions, damage rectangles, per-stage timings and
+presentation cost.
