@@ -6,6 +6,10 @@ use std::time::Instant;
 use lumen_capture::synthetic::{Scene, SyntheticSource};
 use lumen_capture::CaptureSource;
 use lumen_core::{CaptureScheduler, ChangeDetector, Frame, Rect, SchedulerConfig};
+use lumen_ocr::layout::{analyze, Font, Line};
+use lumen_ocr::source::{merge, OcrSource, SourceError, TextSource, TextSpan};
+use lumen_ocr::stub::StubEngine;
+use lumen_ocr::Recognition;
 use lumen_overlay::compositor::Compositor;
 use lumen_overlay::surface::{MemorySurface, OverlaySurface};
 use lumen_overlay::{OverlayBlock, OverlayLayout};
@@ -29,6 +33,8 @@ pub enum RunError {
     },
     #[error("{path} could not be read as a PNG: {detail}")]
     Png { path: PathBuf, detail: String },
+    #[error("the text sources failed: {0}")]
+    Text(#[from] SourceError),
     #[error("the report could not be serialized: {0}")]
     Serialize(#[from] serde_json::Error),
 }
@@ -52,6 +58,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     });
     let mut compositor = Compositor::new();
     let mut surface = MemorySurface::new(width, height);
+    let mut text_source = OcrSource::new(StubEngine::new(recognition_script(options)));
 
     let mut records = Vec::with_capacity(frames.len());
     let mut static_frames = 0;
@@ -66,7 +73,13 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             static_frames += 1;
         }
 
-        let layout = OverlayLayout::new(options.style).with_blocks(blocks_for(&change.regions));
+        // The harness runs the same text stages the product does — source, merge, layout — with the
+        // scripted engine standing in for recognition and no UIA source attached to the merge.
+        let spans = merge(text_source.snapshot(frame)?, Vec::new());
+        let blocks = overlay_blocks(frame, &spans);
+        let texts = blocks.iter().map(|block| block.text.clone()).collect();
+
+        let layout = OverlayLayout::new(options.style).with_blocks(blocks);
 
         let started = Instant::now();
         let composition = compositor.compose(width, height, &layout);
@@ -98,6 +111,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             next_delay_ms: delay.as_millis() as u64,
             detect_micros,
             compose_micros,
+            texts,
             overlay_path,
         });
     }
@@ -145,15 +159,51 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     ))
 }
 
-/// Stands in for recognised text until M2 lands: one block per changed region, which is enough to
-/// exercise erasure, damage tracking and presentation cost.
-fn blocks_for(regions: &[Rect]) -> Vec<OverlayBlock> {
-    regions
+/// What the deterministic engine reads off each frame of the menu scene. `--input` runs attach no
+/// scene and therefore no transcript, and their reports show no text.
+fn recognition_script(options: &Options) -> Vec<Vec<Recognition>> {
+    if options.input.is_some() {
+        return Vec::new();
+    }
+    (0..MENU_FRAMES).map(menu_answer).collect()
+}
+
+/// The number of frames `Scene::menu_appearing` runs for.
+const MENU_FRAMES: usize = 8;
+
+/// The text one frame of the menu scene is showing: its three items from the frame the rows appear
+/// on, and the tooltip across the two frames it flickers for. Bounds sit over the ink bars the
+/// scene paints, the way recognition bounds would sit over glyphs.
+fn menu_answer(frame: usize) -> Vec<Recognition> {
+    let line = |text: &str, bounds: Rect| Recognition {
+        text: text.to_owned(),
+        bounds,
+        confidence: 0.9,
+    };
+    if frame < 2 {
+        return Vec::new();
+    }
+    let mut answer = vec![
+        line("New game", Rect::new(76, 67, 160, 26)),
+        line("Continue", Rect::new(76, 115, 200, 26)),
+        line("Settings", Rect::new(76, 163, 130, 26)),
+    ];
+    if frame == 5 || frame == 6 {
+        answer.push(line("Autosaves every minute", Rect::new(532, 324, 200, 28)));
+    }
+    answer
+}
+
+/// Turns spans into the blocks the compositor presents: lines take their plate colour from the
+/// frame, and the layout analysis groups and classifies them from there.
+fn overlay_blocks(frame: &Frame, spans: &[TextSpan]) -> Vec<OverlayBlock> {
+    let lines: Vec<Line> = spans
         .iter()
-        .enumerate()
-        .map(|(index, rect)| {
-            OverlayBlock::new(*rect, format!("region {index}")).with_colors([24, 22, 20, 255], [240, 238, 236, 255])
-        })
+        .map(|span| Line::from_span(frame, span, Font::estimated(span.bounds.height)))
+        .collect();
+    analyze(frame, lines)
+        .into_iter()
+        .map(|block| OverlayBlock::new(block.bounds, block.text()).with_colors(block.background, block.text_color))
         .collect()
 }
 
@@ -305,6 +355,38 @@ mod tests {
         execute(&options).unwrap();
         let written = read_png(&dir.join("overlay-002.png")).unwrap();
         assert_eq!((written.width(), written.height()), (640, 480));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_script_matches_the_scene_it_reads() {
+        assert_eq!(Scene::menu_appearing(640, 480).frames, MENU_FRAMES);
+        assert!(menu_answer(0).is_empty());
+        assert_eq!(menu_answer(2).len(), 3);
+        assert_eq!(menu_answer(5).len(), 4);
+    }
+
+    #[test]
+    fn recognised_text_becomes_the_overlay_blocks() {
+        let frame = Scene::menu_appearing(640, 480).render(4).unwrap();
+        let mut source = OcrSource::new(StubEngine::new(vec![menu_answer(4)]));
+        let spans = merge(source.snapshot(&frame).unwrap(), Vec::new());
+        let blocks = overlay_blocks(&frame, &spans);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].text, "New game");
+        assert_eq!(blocks[0].background, [214, 210, 204, 255]);
+        assert_eq!(blocks[0].foreground, [34, 28, 22, 255]);
+    }
+
+    #[test]
+    fn the_report_records_the_recognised_text() {
+        let dir = temp_dir("texts");
+        execute(&options(&dir)).unwrap();
+        let text = fs::read_to_string(dir.join("report.json")).unwrap();
+        let report: Report = serde_json::from_str(&text).unwrap();
+        assert!(report.frames[0].texts.is_empty());
+        assert_eq!(report.frames[2].texts, vec!["New game", "Continue", "Settings"]);
+        assert_eq!(report.frames[5].texts.len(), 4);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

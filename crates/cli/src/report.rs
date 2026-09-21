@@ -14,6 +14,8 @@ pub struct FrameRecord {
     pub next_delay_ms: u64,
     pub detect_micros: u128,
     pub compose_micros: u128,
+    /// The text the overlay presents this frame, one entry per block in reading order.
+    pub texts: Vec<String>,
     pub overlay_path: Option<String>,
 }
 

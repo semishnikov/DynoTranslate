@@ -54,7 +54,9 @@ pub struct Scene {
 
 impl Scene {
     /// A window whose menu appears on the third frame and whose tooltip flickers in and out, which
-    /// is the shape of the workload the scheduler and the change detector are tuned for.
+    /// is the shape of the workload the scheduler and the change detector are tuned for. Every menu
+    /// row and the tooltip carry a dark ink bar across their plate, so colour sampling and layout
+    /// analysis see the same two-colour structure real glyphs would give them.
     pub fn menu_appearing(width: u32, height: u32) -> Self {
         Self {
             width,
@@ -62,9 +64,15 @@ impl Scene {
             background: [28, 24, 20, 255],
             blocks: vec![
                 SceneBlock::new(Rect::new(64, 64, 320, 34), [214, 210, 204, 255]).from_frame(2),
+                SceneBlock::new(Rect::new(84, 73, 96, 14), [34, 28, 22, 255]).from_frame(2),
                 SceneBlock::new(Rect::new(64, 112, 320, 34), [214, 210, 204, 255]).from_frame(2),
+                SceneBlock::new(Rect::new(84, 121, 120, 14), [34, 28, 22, 255]).from_frame(2),
                 SceneBlock::new(Rect::new(64, 160, 220, 34), [214, 210, 204, 255]).from_frame(2),
+                SceneBlock::new(Rect::new(84, 169, 72, 14), [34, 28, 22, 255]).from_frame(2),
                 SceneBlock::new(Rect::new(520, 300, 240, 80), [180, 176, 170, 255])
+                    .from_frame(5)
+                    .until_frame(7),
+                SceneBlock::new(Rect::new(540, 332, 160, 12), [30, 26, 20, 255])
                     .from_frame(5)
                     .until_frame(7),
             ],
