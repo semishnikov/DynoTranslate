@@ -49,6 +49,28 @@ jobs:
           path: pipeline-out
           retention-days: 14
 
+      # The development environment cannot reach the Actions log host, so a failing run restates
+      # what it found as check annotations, which are readable through the repository API.
+      - name: Report what failed
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            cargo fmt --all --check > fmt.txt 2>&1
+            sed -n '1,40p' fmt.txt | while IFS= read -r line; do
+              printf '::error title=fmt::%s\n' "${line//'%'/'%25'}"
+            done
+          fi
+          cargo clippy --workspace --all-targets --message-format short -- -D warnings > clippy.txt 2>&1
+          grep -E "(^|: )(error|warning)" clippy.txt > diag.txt
+          if [ ! -s diag.txt ]; then
+            tail -n 30 clippy.txt > diag.txt
+          fi
+          sed -n '1,40p' diag.txt | while IFS= read -r line; do
+            printf '::error title=clippy::%s\n' "${line//'%'/'%25'}"
+          done
+
   web:
     name: Interface
     runs-on: ubuntu-latest
