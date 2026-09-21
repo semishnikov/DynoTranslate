@@ -292,7 +292,7 @@ impl MemoryContext {
                 detail: format!("no {width}x{height} bitmap could be allocated"),
             });
         }
-        unsafe { SelectObject(dc, bitmap.into()) };
+        unsafe { SelectObject(dc, bitmap) };
         Ok(Self { dc, bitmap })
     }
 }

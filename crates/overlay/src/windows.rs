@@ -299,14 +299,15 @@ impl DibSection {
         };
 
         let mut bits: *mut c_void = std::ptr::null_mut();
-        let bitmap = unsafe { CreateDIBSection(screen.dc, &info, DIB_RGB_COLORS, &mut bits, None, 0) }.map_err(
-            |error| SurfaceError::Platform {
-                operation: "CreateDIBSection",
-                detail: error.message(),
-            },
-        )?;
+        let bitmap =
+            unsafe { CreateDIBSection(screen.dc, &info, DIB_RGB_COLORS, &mut bits, None, 0) }.map_err(|error| {
+                SurfaceError::Platform {
+                    operation: "CreateDIBSection",
+                    detail: error.message(),
+                }
+            })?;
 
-        unsafe { SelectObject(dc, bitmap.into()) };
+        unsafe { SelectObject(dc, bitmap) };
         Ok(Self {
             dc,
             bitmap,
