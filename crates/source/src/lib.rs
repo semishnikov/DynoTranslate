@@ -169,11 +169,7 @@ mod tests {
 
     #[test]
     fn reading_order_sorts_top_to_bottom_then_left_to_right() {
-        let mut runs = Vec::new();
-        runs.push(run("c", 40, 20));
-        runs.push(run("a", 5, 5));
-        runs.push(run("b", 30, 5));
-        runs.push(run("d", 0, 20));
+        let mut runs = vec![run("c", 40, 20), run("a", 5, 5), run("b", 30, 5), run("d", 0, 20)];
 
         sort_reading_order(&mut runs);
 

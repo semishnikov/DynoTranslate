@@ -117,11 +117,10 @@ mod tests {
         let (small, wide) = half_overlapping();
         assert!((small.iou(&wide) - DEFAULT_MIN_IOU).abs() < f32::EPSILON);
 
-        let mut runs = Vec::new();
-        runs.push(run("a", small, SourceKind::Ocr, 0.5));
-        runs.push(run("b", wide, SourceKind::Ocr, 0.5));
+        let small_run = run("a", small, SourceKind::Ocr, 0.5);
+        let wide_run = run("b", wide, SourceKind::Ocr, 0.5);
 
-        assert_eq!(merge(runs, &MergePolicy::default()).len(), 1);
+        assert_eq!(merge(vec![small_run, wide_run], &MergePolicy::default()).len(), 1);
     }
 
     #[test]
@@ -161,11 +160,10 @@ mod tests {
         let (small, wide) = half_overlapping();
         let strict = MergePolicy { min_iou: 0.8 };
 
-        let mut runs = Vec::new();
-        runs.push(run("a", small, SourceKind::Ocr, 0.9));
-        runs.push(run("b", wide, SourceKind::Ocr, 0.9));
+        let small_run = run("a", small, SourceKind::Ocr, 0.9);
+        let wide_run = run("b", wide, SourceKind::Ocr, 0.9);
 
-        assert_eq!(texts(&merge(runs, &strict)), vec!["a", "b"]);
+        assert_eq!(texts(&merge(vec![small_run, wide_run], &strict)), vec!["a", "b"]);
     }
 
     #[test]

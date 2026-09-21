@@ -76,8 +76,8 @@ impl UiAutomationSource {
 
     /// Walks the window's descendants and reads the text each one exposes.
     fn walk(&self, root: &IUIAutomationElement, frame: Rect) -> Result<Vec<TextRun>, SourceError> {
-        let condition = unsafe { self.automation.CreateTrueCondition() }
-            .map_err(|error| failed("CreateTrueCondition", &error))?;
+        let condition =
+            unsafe { self.automation.CreateTrueCondition() }.map_err(|error| failed("CreateTrueCondition", &error))?;
         let found = unsafe { root.FindAll(TreeScope_Descendants, &condition) };
         let found = found.map_err(|error| failed("FindAll", &error))?;
 
