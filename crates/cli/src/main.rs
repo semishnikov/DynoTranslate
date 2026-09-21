@@ -138,7 +138,9 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
 }
 
 fn parse_number(value: &str, flag: &str) -> Result<u32, String> {
-    value.parse().map_err(|_| format!("{flag} expects a whole number, got {value}"))
+    value
+        .parse()
+        .map_err(|_| format!("{flag} expects a whole number, got {value}"))
 }
 
 #[cfg(test)]

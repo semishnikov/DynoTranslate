@@ -138,7 +138,11 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
         source,
     })?;
 
-    Ok(format!("{}\nreport written to {}", report.summarize(), report_path.display()))
+    Ok(format!(
+        "{}\nreport written to {}",
+        report.summarize(),
+        report_path.display()
+    ))
 }
 
 /// Stands in for recognised text until M2 lands: one block per changed region, which is enough to
@@ -148,8 +152,7 @@ fn blocks_for(regions: &[Rect]) -> Vec<OverlayBlock> {
         .iter()
         .enumerate()
         .map(|(index, rect)| {
-            OverlayBlock::new(*rect, format!("region {index}"))
-                .with_colors([24, 22, 20, 255], [240, 238, 236, 255])
+            OverlayBlock::new(*rect, format!("region {index}")).with_colors([24, 22, 20, 255], [240, 238, 236, 255])
         })
         .collect()
 }

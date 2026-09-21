@@ -67,7 +67,15 @@ impl LayeredOverlay {
 
         unsafe {
             let _ = SetLayeredWindowAttributes(handle, COLORREF(0), 255, LWA_ALPHA);
-            let _ = SetWindowPos(handle, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                handle,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
             let _ = ShowWindow(handle, SW_SHOWNA);
         }
 
@@ -75,13 +83,19 @@ impl LayeredOverlay {
             handle,
             width: bounds.width,
             height: bounds.height,
-            origin: POINT { x: bounds.x, y: bounds.y },
+            origin: POINT {
+                x: bounds.x,
+                y: bounds.y,
+            },
             excluded_from_capture: excluded,
         })
     }
 
     pub fn move_to(&mut self, bounds: Rect) -> Result<(), SurfaceError> {
-        self.origin = POINT { x: bounds.x, y: bounds.y };
+        self.origin = POINT {
+            x: bounds.x,
+            y: bounds.y,
+        };
         unsafe {
             SetWindowPos(
                 self.handle,

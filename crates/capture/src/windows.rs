@@ -161,7 +161,9 @@ impl DesktopCopySource {
     }
 
     pub fn for_window(handle: HWND) -> Result<Self, CaptureError> {
-        describe_window(handle).map(Self::new).ok_or(CaptureError::TargetNotVisible)
+        describe_window(handle)
+            .map(Self::new)
+            .ok_or(CaptureError::TargetNotVisible)
     }
 
     fn capture(&mut self) -> Result<Frame, CaptureError> {
@@ -282,7 +284,9 @@ impl MemoryContext {
         }
         let bitmap = unsafe { CreateCompatibleBitmap(screen.dc, width as i32, height as i32) };
         if bitmap.is_invalid() {
-            unsafe { let _ = DeleteDC(dc); };
+            unsafe {
+                let _ = DeleteDC(dc);
+            };
             return Err(CaptureError::Platform {
                 operation: "CreateCompatibleBitmap",
                 detail: format!("no {width}x{height} bitmap could be allocated"),

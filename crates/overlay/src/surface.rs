@@ -128,8 +128,8 @@ impl OverlaySurface for MemorySurface {
     }
 
     fn resize(&mut self, width: u32, height: u32) -> Result<(), SurfaceError> {
-        self.frame = Frame::filled(width, height, crate::compositor::CLEAR)
-            .map_err(|error| SurfaceError::Platform {
+        self.frame =
+            Frame::filled(width, height, crate::compositor::CLEAR).map_err(|error| SurfaceError::Platform {
                 operation: "resize",
                 detail: error.to_string(),
             })?;
@@ -163,11 +163,12 @@ impl OverlaySurface for MemorySurface {
     }
 
     fn clear(&mut self) -> Result<(), SurfaceError> {
-        self.frame = Frame::filled(self.width, self.height, crate::compositor::CLEAR)
-            .map_err(|error| SurfaceError::Platform {
+        self.frame = Frame::filled(self.width, self.height, crate::compositor::CLEAR).map_err(|error| {
+            SurfaceError::Platform {
                 operation: "clear",
                 detail: error.to_string(),
-            })?;
+            }
+        })?;
         self.clears += 1;
         Ok(())
     }

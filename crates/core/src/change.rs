@@ -76,7 +76,9 @@ impl ChangeDetector {
                 let previous = if reset {
                     None
                 } else {
-                    self.grid.as_ref().and_then(|grid| grid.hashes.get((row * columns + column) as usize).copied())
+                    self.grid
+                        .as_ref()
+                        .and_then(|grid| grid.hashes.get((row * columns + column) as usize).copied())
                 };
                 if previous != Some(hash) {
                     changed.push(rect);
