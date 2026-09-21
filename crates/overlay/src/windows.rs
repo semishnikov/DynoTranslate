@@ -69,7 +69,7 @@ impl LayeredOverlay {
             let _ = SetLayeredWindowAttributes(handle, COLORREF(0), 255, LWA_ALPHA);
             let _ = SetWindowPos(
                 handle,
-                Some(HWND_TOPMOST),
+                HWND_TOPMOST,
                 0,
                 0,
                 0,
@@ -99,7 +99,7 @@ impl LayeredOverlay {
         unsafe {
             SetWindowPos(
                 self.handle,
-                Some(HWND_TOPMOST),
+                HWND_TOPMOST,
                 bounds.x,
                 bounds.y,
                 bounds.width as i32,
@@ -189,10 +189,10 @@ impl OverlaySurface for LayeredOverlay {
         unsafe {
             UpdateLayeredWindow(
                 self.handle,
-                Some(screen.dc),
+                screen.dc,
                 Some(&self.origin),
                 Some(&size),
-                Some(dib.dc),
+                dib.dc,
                 Some(&source),
                 COLORREF(0),
                 Some(&blend),
@@ -277,7 +277,7 @@ struct DibSection {
 
 impl DibSection {
     fn create(screen: &ScreenDc, width: u32, height: u32) -> Result<Self, SurfaceError> {
-        let dc = unsafe { CreateCompatibleDC(Some(screen.dc)) };
+        let dc = unsafe { CreateCompatibleDC(screen.dc) };
         if dc.is_invalid() {
             return Err(SurfaceError::Platform {
                 operation: "CreateCompatibleDC",
@@ -299,7 +299,7 @@ impl DibSection {
         };
 
         let mut bits: *mut c_void = std::ptr::null_mut();
-        let bitmap = unsafe { CreateDIBSection(Some(screen.dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) }.map_err(
+        let bitmap = unsafe { CreateDIBSection(screen.dc, &info, DIB_RGB_COLORS, &mut bits, None, 0) }.map_err(
             |error| SurfaceError::Platform {
                 operation: "CreateDIBSection",
                 detail: error.message(),
@@ -326,7 +326,7 @@ impl DibSection {
 impl Drop for DibSection {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteObject(self.bitmap.into());
+            let _ = DeleteObject(self.bitmap);
             let _ = DeleteDC(self.dc);
         }
     }

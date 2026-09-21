@@ -180,7 +180,7 @@ impl DesktopCopySource {
                 0,
                 bounds.width as i32,
                 bounds.height as i32,
-                Some(screen.dc),
+                screen.dc,
                 bounds.x,
                 bounds.y,
                 SRCCOPY,
@@ -275,7 +275,7 @@ struct MemoryContext {
 
 impl MemoryContext {
     fn compatible_with(screen: &ScreenContext, width: u32, height: u32) -> Result<Self, CaptureError> {
-        let dc = unsafe { CreateCompatibleDC(Some(screen.dc)) };
+        let dc = unsafe { CreateCompatibleDC(screen.dc) };
         if dc.is_invalid() {
             return Err(CaptureError::Platform {
                 operation: "CreateCompatibleDC",
@@ -300,7 +300,7 @@ impl MemoryContext {
 impl Drop for MemoryContext {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteObject(self.bitmap.into());
+            let _ = DeleteObject(self.bitmap);
             let _ = DeleteDC(self.dc);
         }
     }
