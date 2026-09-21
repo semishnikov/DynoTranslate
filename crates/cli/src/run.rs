@@ -10,7 +10,7 @@ use lumen_layout::{analyse, Block, LayoutConfig};
 use lumen_overlay::compositor::Compositor;
 use lumen_overlay::surface::{MemorySurface, OverlaySurface};
 use lumen_overlay::{OverlayBlock, OverlayLayout};
-use lumen_source::{merge, MergePolicy, ReadRequest, TextTarget, TextSource};
+use lumen_source::{merge, MergePolicy, ReadRequest, TextSource, TextTarget};
 
 use crate::report::{percentile, BlockRecord, FrameRecord, Report, Totals};
 use crate::source::SceneTextSource;
