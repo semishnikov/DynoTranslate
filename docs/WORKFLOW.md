@@ -145,15 +145,32 @@ and never leave scratch files staged.
 
 ## Re-running a build
 
-Pushing a commit is the normal trigger. When there is nothing to change, an empty commit is
-acceptable and self-documenting:
+The three re-run endpoints — the whole run, the failed jobs, and a single job — all need
+`actions:write`, which the working account does not have; each returns `403 Resource not
+accessible by integration`. So the only way to trigger a build is to push. When there is nothing to
+change, an empty commit is acceptable and self-documenting:
 
 ```sh
-git commit --allow-empty -m "chore(ci): re-run the workflow"
+git commit --allow-empty -m "chore(ci): re-run after the artifact upload failed with a 403"
 ```
 
 `concurrency` in the workflow cancels a run that a newer push to the same ref has superseded, so a
 missing result usually means a newer commit arrived.
+
+### Failures that are not the code's
+
+Read the step list before reading the diagnostics:
+
+```sh
+gh api repos/semishnikov/DynoTranslate/actions/runs/<run-id>/jobs \
+  --jq '.jobs[] | .name as $n | .steps[] | "\($n): \(.name)\t\(.conclusion)"'
+```
+
+The `Upload the pipeline output` step talks to the artifact store and can fail with
+`Failed to FinalizeArtifact: ... (403) Forbidden` after lint, tests and the pipeline run have all
+passed. That is infrastructure, not a defect: re-run it by pushing. The diagnostic step confirms
+it, because it re-runs clippy and has nothing to report — its only annotation is a line reading
+`Finished dev profile ... in 0.20s`.
 
 ## Done means
 
