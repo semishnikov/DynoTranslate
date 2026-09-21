@@ -1,6 +1,0 @@
-# TEMPORARY diagnostics: every rustc/clippy-driver invocation is routed through
-# tools/rustc-wrapper.bat -> tools/rustc-wrapper-shim.py, which relays to the real compiler
-# and surfaces failures as GitHub Actions annotations (readable through the API even when
-# job logs are unreachable). Remove once the windows lint failure is diagnosed.
-[build]
-rustc-wrapper = "./tools/rustc-wrapper.bat"
