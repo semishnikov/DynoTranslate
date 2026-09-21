@@ -68,7 +68,7 @@ pub struct ReadRequest<'a> {
 }
 
 /// One run of text a source found.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextRun {
     /// The characters, in reading order.
     pub text: String,

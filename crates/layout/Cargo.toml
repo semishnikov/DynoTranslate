@@ -1,0 +1,13 @@
+[package]
+name = "lumen-layout"
+description = "Groups recognised runs into lines and blocks, classifies each block and measures its colours"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+lumen-core = { workspace = true }
+lumen-source = { workspace = true }
+serde = { workspace = true }
