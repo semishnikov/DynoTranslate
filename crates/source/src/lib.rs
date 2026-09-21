@@ -142,13 +142,11 @@ pub fn within_regions(runs: Vec<TextRun>, regions: &[Rect]) -> Vec<TextRun> {
 /// Runs the window has scrolled or clipped away come back as `None`: translating text that is not
 /// on screen would put a line where the user cannot read it.
 pub fn local_bounds(desktop: Rect, frame: Rect) -> Option<Rect> {
-    let shifted = Rect::new(
-        desktop.x - frame.x,
-        desktop.y - frame.y,
-        desktop.width,
-        desktop.height,
-    );
-    shifted.intersection(&Rect::new(0, 0, frame.width, frame.height))
+    let x = desktop.x - frame.x;
+    let y = desktop.y - frame.y;
+    let shifted = Rect::new(x, y, desktop.width, desktop.height);
+    let frame_local = Rect::new(0, 0, frame.width, frame.height);
+    shifted.intersection(&frame_local)
 }
 
 #[cfg(test)]

@@ -25,9 +25,8 @@ use windows::Win32::UI::Accessibility::{
     TreeScope_Descendants, UIA_TextPatternId, UIA_ValuePatternId,
 };
 
-use crate::{
-    local_bounds, sort_reading_order, within_regions, ReadRequest, SourceError, SourceKind, TextRun, TextSource,
-};
+use crate::{local_bounds, sort_reading_order, within_regions};
+use crate::{ReadRequest, SourceError, SourceKind, TextRun, TextSource};
 
 /// Stops a misbehaving provider from turning one window into an endless walk. A dense desktop
 /// application exposes a few hundred text-bearing elements, so this is well past one.
