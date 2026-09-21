@@ -66,7 +66,9 @@ pub fn group_lines(runs: Vec<TextRun>, config: &LayoutConfig) -> Vec<Line> {
 /// The line a run continues, if there is one. Later lines are tried first: runs arrive sorted by
 /// vertical position, so the row a run belongs to is nearly always a recent one.
 fn host(lines: &[Line], bounds: Rect, config: &LayoutConfig) -> Option<usize> {
-    (0..lines.len()).rev().find(|index| same_row(lines[*index].bounds, bounds, config))
+    (0..lines.len())
+        .rev()
+        .find(|index| same_row(lines[*index].bounds, bounds, config))
 }
 
 /// Whether two boxes are part of one row: they overlap vertically by at least
