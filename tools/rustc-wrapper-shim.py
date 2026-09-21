@@ -2,8 +2,8 @@
 """Cargo rustc-wrapper shim: relay to the real compiler, surface failures as annotations.
 
 Invoked as: rustc-wrapper <program> <args...>, where <program> is rustc or clippy-driver
-(a bare name or a full path). Diagnostics are re-emitted as GitHub Actions annotations and
-appended to the job summary so they are readable even when job logs are unreachable.
+(a bare name or a full path). On failure, diagnostics are written to $SHIM_REPORT (echoed by
+the wrapper, which reaches the runner's annotation parser) and to the job summary.
 TEMPORARY.
 """
 import json
@@ -18,10 +18,17 @@ def escape(text):
 
 def report(line):
     print("::error::" + escape(line), flush=True)
-    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    path = os.environ.get("SHIM_REPORT")
     if path:
         try:
             with open(path, "a", encoding="utf-8") as handle:
+                handle.write("::error::" + escape(line) + "\n")
+        except OSError:
+            pass
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        try:
+            with open(summary, "a", encoding="utf-8") as handle:
                 handle.write(line[:4000] + "\n")
         except OSError:
             pass
