@@ -86,7 +86,11 @@ impl CaptureScheduler {
     pub fn next_delay(&mut self, report: &ChangeReport) -> Duration {
         let ceiling = self.config.responsiveness.ceiling_hz() as f32;
         let floor = self.config.idle_hz.max(1) as f32;
-        let ceiling = if self.throttled { (ceiling * 0.25).max(floor) } else { ceiling };
+        let ceiling = if self.throttled {
+            (ceiling * 0.25).max(floor)
+        } else {
+            ceiling
+        };
 
         if report.changed_fraction() >= self.config.activity_threshold {
             self.calm_streak = 0;

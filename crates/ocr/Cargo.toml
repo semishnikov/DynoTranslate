@@ -1,0 +1,13 @@
+[package]
+name = "lumen-ocr"
+description = "Text recognition engines behind one trait, with scoring and a deterministic double"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+lumen-core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }

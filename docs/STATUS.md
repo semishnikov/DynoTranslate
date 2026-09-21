@@ -15,33 +15,33 @@ Updated: 2026-09-21
   - `lumen-pipeline`: the headless harness. A scene or a PNG goes in; overlay PNGs and a JSON report with per-frame
     timings, change regions, damage and presentation cost come out.
 - M1. ADR 0003 (capture path and the adapter boundary) and ADR 0004 (overlay properties are asserted, not assumed).
-- M1. CI workflow covering fmt, clippy with warnings denied, tests and a pipeline run on `ubuntu-latest` and
-  `windows-latest`, plus lint and build for the interface.
+- M1. CI workflow at `.github/workflows/ci.yml` covering fmt, clippy with warnings denied, tests and a pipeline run on
+  `ubuntu-latest` and `windows-latest`, plus lint and build for the interface.
+- M1. Verified green: CI run 35629894251 passes on all three jobs (Rust ubuntu, Rust windows, interface). The Windows
+  adapters compile against `windows` 0.58 with its `Param<T>` calling convention, and the full test suite passes on
+  both platforms. Merged to `main` as `dea9a45` (PR #3); the disconnected PR #2 was closed as superseded.
+
+## Done (M2, in progress)
+
+- M2. `lumen-ocr`: the `OcrEngine` trait (`recognize` over regions, one entry per line), the scripted `StubEngine`
+  double, and the character error rate benchmark runner with per-case and mean scored reports. Verified green on both
+  platforms (CI run 35632210937, draft PR #4).
 
 ## Next
 
-- M2. OCR engines behind one trait, the UI Automation text source, layout analysis, language identification, and the
-  character error rate benchmark.
+- M2. The UI Automation text source (Windows), layout analysis (reading order, blocks), and language identification.
 
 ## Known limitations
 
-- The Rust workspace has not been compiled anywhere yet. It is written against the documented APIs of `windows` 0.58,
-  `png` and `serde`, but no build has confirmed it. The first CI run is the verification, and any compile errors it
-  reports are fixed at the start of the next session.
 - The harness synthesises one overlay block per changed region. Real recognised text arrives in M2.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces it, as recorded in
   ADR 0003.
 
 ## Blocked
 
-- The development environment cannot reach `static.rust-lang.org` or `crates.io`, so no Rust toolchain or dependency
-  can be resolved locally. All Rust verification happens on GitHub Actions.
-- The CI workflow could not be pushed: the GitHub App backing this session lacks the `workflows` permission, and the
-  push is rejected. The file is committed at `docs/ci/ci.yml` and must be copied to `.github/workflows/ci.yml` by the
-  owner, or the permission granted.
+- The development environment cannot resolve a Rust toolchain or dependencies locally. All Rust verification happens
+  on GitHub Actions.
 
 ## Needed from the owner
 
-- Copy `docs/ci/ci.yml` to `.github/workflows/ci.yml` (or grant the `workflows` permission) so the Rust workspace is
-  actually built and tested.
 - A code-signing certificate before M6, as agreed; not a blocker until then.

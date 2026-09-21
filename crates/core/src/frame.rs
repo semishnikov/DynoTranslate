@@ -56,7 +56,12 @@ impl Frame {
     }
 
     pub fn filled(width: u32, height: u32, bgra: [u8; 4]) -> Result<Self, FrameError> {
-        let pixels = bgra.iter().copied().cycle().take(width as usize * height as usize * 4).collect();
+        let pixels = bgra
+            .iter()
+            .copied()
+            .cycle()
+            .take(width as usize * height as usize * 4)
+            .collect();
         Self::packed(width, height, pixels)
     }
 

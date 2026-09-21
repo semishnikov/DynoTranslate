@@ -145,7 +145,11 @@ mod tests {
 
     #[test]
     fn coalesce_merges_touching_rects() {
-        let rects = vec![Rect::new(0, 0, 10, 10), Rect::new(10, 0, 10, 10), Rect::new(60, 60, 5, 5)];
+        let rects = vec![
+            Rect::new(0, 0, 10, 10),
+            Rect::new(10, 0, 10, 10),
+            Rect::new(60, 60, 5, 5),
+        ];
         let merged = coalesce(rects);
         assert_eq!(merged, vec![Rect::new(0, 0, 20, 10), Rect::new(60, 60, 5, 5)]);
     }
@@ -159,7 +163,10 @@ mod tests {
     #[test]
     fn clamping_keeps_rects_inside_the_frame() {
         let frame = Rect::new(0, 0, 100, 100);
-        assert_eq!(Rect::new(-10, -10, 30, 30).clamp_to(&frame), Some(Rect::new(0, 0, 20, 20)));
+        assert_eq!(
+            Rect::new(-10, -10, 30, 30).clamp_to(&frame),
+            Some(Rect::new(0, 0, 20, 20))
+        );
         assert_eq!(Rect::new(200, 0, 10, 10).clamp_to(&frame), None);
     }
 }

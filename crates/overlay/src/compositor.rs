@@ -222,7 +222,10 @@ mod tests {
         compositor.compose(320, 240, &layout);
         let composition = compositor.compose(320, 240, &layout);
         assert!(!composition.damage.is_empty());
-        assert!(composition.damage.iter().all(|rect| rect.width <= 320 && rect.height < 240));
+        assert!(composition
+            .damage
+            .iter()
+            .all(|rect| rect.width <= 320 && rect.height < 240));
     }
 
     #[test]
@@ -272,8 +275,11 @@ mod tests {
         let seamless = compositor.compose(
             320,
             240,
-            &OverlayLayout::new(OverlayStyle::Seamless)
-                .with_blocks(vec![OverlayBlock::new(Rect::new(10, 10, 40, 20), "A").with_confidence(0.2)]),
+            &OverlayLayout::new(OverlayStyle::Seamless).with_blocks(vec![OverlayBlock::new(
+                Rect::new(10, 10, 40, 20),
+                "A",
+            )
+            .with_confidence(0.2)]),
         );
         assert_eq!(seamless.frame.pixel(20, 20)[3], 255);
     }

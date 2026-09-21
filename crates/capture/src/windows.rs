@@ -35,7 +35,7 @@ pub fn enumerate_targets() -> Result<Vec<CaptureTarget>, CaptureError> {
         detail: error.message(),
     })?;
 
-    found.sort_by(|left, right| right.bounds.area().cmp(&left.bounds.area()));
+    found.sort_by_key(|target| std::cmp::Reverse(target.bounds.area()));
     Ok(found)
 }
 
@@ -161,7 +161,9 @@ impl DesktopCopySource {
     }
 
     pub fn for_window(handle: HWND) -> Result<Self, CaptureError> {
-        describe_window(handle).map(Self::new).ok_or(CaptureError::TargetNotVisible)
+        describe_window(handle)
+            .map(Self::new)
+            .ok_or(CaptureError::TargetNotVisible)
     }
 
     fn capture(&mut self) -> Result<Frame, CaptureError> {
@@ -249,7 +251,7 @@ struct ScreenContext {
 
 impl ScreenContext {
     fn acquire() -> Result<Self, CaptureError> {
-        let dc = unsafe { GetDC(HWND::default()) };
+        let dc = unsafe { GetDC(None) };
         if dc.is_invalid() {
             return Err(CaptureError::Platform {
                 operation: "GetDC",
@@ -262,7 +264,7 @@ impl ScreenContext {
 
 impl Drop for ScreenContext {
     fn drop(&mut self) {
-        unsafe { ReleaseDC(HWND::default(), self.dc) };
+        unsafe { ReleaseDC(None, self.dc) };
     }
 }
 
@@ -282,7 +284,9 @@ impl MemoryContext {
         }
         let bitmap = unsafe { CreateCompatibleBitmap(screen.dc, width as i32, height as i32) };
         if bitmap.is_invalid() {
-            unsafe { let _ = DeleteDC(dc); };
+            unsafe {
+                let _ = DeleteDC(dc);
+            };
             return Err(CaptureError::Platform {
                 operation: "CreateCompatibleBitmap",
                 detail: format!("no {width}x{height} bitmap could be allocated"),
