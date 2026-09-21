@@ -1,0 +1,66 @@
+.packs {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.packs .card {
+  padding: var(--space-4);
+}
+
+.pack {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.pack__pair {
+  font-weight: 550;
+}
+
+.pack__meta {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+}
+
+.pack__progress {
+  width: 160px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+
+.pack__progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-slower) var(--ease-standard);
+}
+
+.pack__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.primary-button {
+  min-height: 34px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 550;
+  transition: background var(--dur-base) var(--ease-standard);
+}
+
+.primary-button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.primary-button:active {
+  transform: scale(0.98);
+}

@@ -1,0 +1,76 @@
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+  --text-3xl: 40px;
+
+  --dur-fast: 80ms;
+  --dur-base: 140ms;
+  --dur-slow: 220ms;
+  --dur-slower: 360ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  --font-ui: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --bg-app: oklch(19% 0.012 265);
+  --bg-surface: oklch(23% 0.013 265);
+  --bg-surface-raised: oklch(26% 0.014 265);
+  --bg-inset: oklch(17% 0.012 265);
+  --bg-hover: oklch(30% 0.015 265);
+  --border-hairline: oklch(35% 0.014 265 / 0.6);
+  --border-strong: oklch(45% 0.018 265 / 0.8);
+  --fg-primary: oklch(97% 0.004 265);
+  --fg-secondary: oklch(76% 0.012 265);
+  --fg-muted: oklch(63% 0.013 265);
+  --accent: oklch(64% 0.13 250);
+  --accent-hover: oklch(69% 0.13 250);
+  --accent-fg: oklch(16% 0.02 250);
+  --positive: oklch(70% 0.13 155);
+  --caution: oklch(78% 0.13 80);
+  --negative: oklch(65% 0.16 25);
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.4), 0 2px 8px oklch(0% 0 0 / 0.28);
+  --shadow-2: 0 8px 28px oklch(0% 0 0 / 0.42);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg-app: oklch(97.5% 0.003 265);
+  --bg-surface: oklch(100% 0 0);
+  --bg-surface-raised: oklch(100% 0 0);
+  --bg-inset: oklch(95% 0.004 265);
+  --bg-hover: oklch(94% 0.006 265);
+  --border-hairline: oklch(87% 0.006 265);
+  --border-strong: oklch(78% 0.008 265);
+  --fg-primary: oklch(25% 0.012 265);
+  --fg-secondary: oklch(45% 0.012 265);
+  --fg-muted: oklch(56% 0.012 265);
+  --accent: oklch(52% 0.14 250);
+  --accent-hover: oklch(47% 0.14 250);
+  --accent-fg: oklch(99% 0 0);
+  --positive: oklch(52% 0.13 155);
+  --caution: oklch(58% 0.13 70);
+  --negative: oklch(53% 0.18 25);
+  --shadow-1: 0 1px 2px oklch(40% 0.02 265 / 0.1), 0 2px 8px oklch(40% 0.02 265 / 0.08);
+  --shadow-2: 0 10px 30px oklch(40% 0.02 265 / 0.14);
+  color-scheme: light;
+}
