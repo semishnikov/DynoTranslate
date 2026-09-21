@@ -21,7 +21,7 @@ Updated: 2026-09-21
   adapters compile against `windows` 0.58 with its `Param<T>` calling convention, and the full test suite passes on
   both platforms. Merged to `main` as `dea9a45` (PR #3); the disconnected PR #2 was closed as superseded.
 
-## Done (M2, in progress)
+## Done (M2)
 
 - M2. `lumen-ocr`: the `OcrEngine` trait (`recognize` over regions, one entry per line), the scripted `StubEngine`
   double, and the character error rate benchmark runner with per-case and mean scored reports. Verified green on both
@@ -35,15 +35,18 @@ Updated: 2026-09-21
   `language`: `identify()` names en/ru/ja/zh/ko/ar/he/el/und from Unicode blocks alone (kana and Hangul are decisive
   over Han). Verified green on both platforms (CI run 35638528319, PR #5): 34/34 tests, clippy `-D warnings` and
   rustfmt clean.
+- M2. The UI Automation text source and the harness wiring. `lumen-ocr::uia` turns `UiaSource` into a `TextSource`
+  over the live element tree: the control view walk (bounded by element and depth budgets) reports every named,
+  on-screen element as a span with full confidence, translated from desktop to frame coordinates; the span policy is
+  portable and tested everywhere, only the COM walk is platform code (`windows` 0.58). `lumen-pipeline` now runs the
+  product's text stages — source snapshot, `merge()`, `layout::analyze()` — in place of its per-region placeholder
+  blocks, with the scripted engine standing in for recognition; the menu scene paints ink bars across its plates so
+  colour sampling sees plate and glyph pixels, and the report records the text each frame presents. Verified green on
+  all three jobs (CI run 35646741096, PR #5): 37/37 tests including the three `uia` span-policy cases.
 
 ## Next
 
-- M2. The UI Automation text source (Windows), then wiring the text source and layout analysis into the pipeline
-  harness in place of its per-region placeholder blocks.
-
-## Known limitations
-
-- The harness synthesises one overlay block per changed region. Real recognised text arrives in M2.
+- M3. Token protection, translation memory, the offline engine and pack manager.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces it, as recorded in
   ADR 0003.
 
@@ -52,7 +55,8 @@ Updated: 2026-09-21
 - The sandbox cannot reach `static.rust-lang.org` or `crates.io`, so the full workspace (Windows adapters, the
   `png`/`serde_json`/`tracing` tree) still builds only on GitHub Actions. The `lumen-ocr` slice was additionally
   verified before the push with a locally assembled toolchain (rustc 1.88 from npm `@rustbin`, dependencies vendored
-  from GitHub): all 34 tests, clippy with warnings denied, and rustfmt clean.
+  from GitHub): all 37 tests, clippy with warnings denied, and rustfmt clean — including a `x86_64-pc-windows-msvc`
+  cross-check of the UIA code with the same `RUSTFLAGS` CI uses.
 
 ## Needed from the owner
 
