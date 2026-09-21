@@ -1,0 +1,6 @@
+# TEMPORARY diagnostics: cargo drives rustc/clippy-driver through python3, which executes the
+# committed ./rustc and ./clippy-driver shims at the workspace root. The shims relay to the real
+# compiler and surface failures as GitHub Actions annotations, which are readable through the API
+# even when job logs are unreachable. Remove once the windows lint failure is diagnosed.
+[build]
+rustc-wrapper = "python3"

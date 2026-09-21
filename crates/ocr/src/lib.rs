@@ -17,10 +17,13 @@ pub mod language;
 pub mod layout;
 pub mod source;
 pub mod stub;
+pub mod uia;
 
 pub use language::LanguageId;
 pub use source::{merge, OcrSource, SourceError, TextOrigin, TextSource, TextSpan};
 pub use stub::StubEngine;
+#[cfg(windows)]
+pub use uia::UiaSource;
 
 /// One recognised line of text: the characters in reading order, their bounds in frame pixels, and
 /// the engine's mean confidence over the line.
