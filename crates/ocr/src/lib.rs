@@ -4,11 +4,11 @@
 //! come out. Real engines (a local model, the Windows OCR runtime) and the deterministic
 //! [`StubEngine`](stub::StubEngine) used by tests and benchmarks are interchangeable through it.
 //!
-//! Around the engine live the text layers of the pipeline. [`source`] turns recognition — and, once
-//! it lands, UI Automation — into text spans and merges the two views of one screen. [`layout`]
-//! groups the resulting lines into classified blocks with sampled colours. [`language`] names the
-//! language a text is written in from its script alone. [`benchmark`] scores engines by character
-//! error rate.
+//! Around the engine live the text layers of the pipeline. [`source`] turns recognition and UI
+//! Automation into text spans and merges the two views of one screen; [`uia`] is the UI Automation
+//! source itself (Windows). [`layout`] groups the resulting lines into classified blocks with
+//! sampled colours. [`language`] names the language a text is written in from its script alone.
+//! [`benchmark`] scores engines by character error rate.
 
 use lumen_core::{Frame, Rect};
 
@@ -17,10 +17,13 @@ pub mod language;
 pub mod layout;
 pub mod source;
 pub mod stub;
+pub mod uia;
 
 pub use language::LanguageId;
 pub use source::{merge, OcrSource, SourceError, TextOrigin, TextSource, TextSpan};
 pub use stub::StubEngine;
+#[cfg(windows)]
+pub use uia::UiaSource;
 
 /// One recognised line of text: the characters in reading order, their bounds in frame pixels, and
 /// the engine's mean confidence over the line.
