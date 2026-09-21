@@ -218,7 +218,9 @@ fn menu_stack_indices(blocks: &[Block], context: Context) -> Vec<usize> {
     let mut chains: Vec<Vec<usize>> = Vec::new();
     let mut chain: Vec<usize> = Vec::new();
     for index in singles {
-        let joins = chain.last().is_some_and(|previous| stacks(&blocks[*previous], &blocks[index], context));
+        let joins = chain
+            .last()
+            .is_some_and(|previous| stacks(&blocks[*previous], &blocks[index], context));
         if !joins && !chain.is_empty() {
             chains.push(mem::take(&mut chain));
         }
