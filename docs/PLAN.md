@@ -17,7 +17,7 @@ Graphics Capture, DXGI Desktop Duplication fallback), UI Automation, and a trans
 | ID | Scope | State |
 | --- | --- | --- |
 | M0 | Repository, plan, architecture, design tokens, product shell UI on a mocked backend | done |
-| M1 | Capture adapter, tile change detection, overlay window, headless pipeline CLI | not started |
+| M1 | Capture adapter, tile change detection, overlay window, headless pipeline CLI | done |
 | M2 | OCR engines behind one trait, UI Automation text source, layout analysis, language ID, CER benchmark | not started |
 | M3 | Token protection, translation memory, offline engine and pack manager, optional online engines | not started |
 | M4 | Inpainting, font matching, text fitting, temporal stability, RTL and vertical text, golden images | not started |
@@ -25,9 +25,16 @@ Graphics Capture, DXGI Desktop Duplication fallback), UI Automation, and a trans
 | M6 | Performance tuning, edge cases, chaos and soak runs, updater, installer | not started |
 | M7 | Release: signed installer, winget manifest, QA report, manual test plan | not started |
 
+## Translation engines
+
+The offline engine is the default and the only one required for the product to work: it runs on the user's machine, it
+costs nothing and no text leaves the computer. Online engines (DeepL, Google, Microsoft, a custom LLM endpoint) are
+optional modules behind the same `TranslationEngine` trait, enabled per application with a user-supplied key, and they
+fall back to the offline engine on timeout or error. Landing in M3.
+
 ## Environment constraint
 
-The development sandbox is Linux and has no access to `static.rust-lang.org`, so no Rust toolchain can be installed
-here. M1 onward therefore depends on either an unblocked toolchain mirror or GitHub Actions runners (`windows-latest`
-for platform code, `ubuntu-latest` for the portable crates). Until then, work that can be verified locally is the
-TypeScript shell and its tests.
+The development environment is Linux and cannot reach `static.rust-lang.org` or `crates.io`, so no Rust toolchain or
+crate can be resolved there. Rust is therefore authored locally and compiled, linted and tested on GitHub Actions:
+`ubuntu-latest` for the portable crates and `windows-latest` for the platform adapters. Nothing in the Rust workspace
+is claimed to build until that workflow reports it.

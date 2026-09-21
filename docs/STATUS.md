@@ -4,31 +4,39 @@ Updated: 2026-09-21
 
 ## Done
 
-- M0. Plan, architecture and the first two ADRs written.
-- M0. Design tokens (OKLCH ramps, spacing, type scale, motion durations and easings) as a single CSS source with dark
-  and light themes.
-- M0. Product shell in React and TypeScript with four screens (Overview, Apps, Languages, Settings) and custom
-  accessible controls: spring toggle, slider with live value, segmented control with sliding indicator, searchable
-  language combobox with native-script names, toasts, empty states.
-- M0. The shell builds with `tsc` and `vite build` with no errors and runs against mocked pipeline state.
+- M0. Plan, architecture, ADRs 0001 and 0002, design tokens, and the product shell with four screens.
+- M1. Rust workspace with four crates:
+  - `lumen-core`: frame model with stride-correct addressing, rectangle and damage math, tile-based change detection,
+    and the adaptive capture scheduler that idles at 2 Hz and backs off when the foreground application drops frames.
+  - `lumen-capture`: the `CaptureSource` trait, a deterministic scripted scene source for tests and benchmarks, and a
+    Windows adapter that enumerates real windows and copies their pixels.
+  - `lumen-overlay`: the deterministic compositor with damage tracking, the `OverlaySurface` contract with the safety
+    properties expressed as data, an in-memory surface, and the Windows layered click-through window.
+  - `lumen-pipeline`: the headless harness. A scene or a PNG goes in; overlay PNGs and a JSON report with per-frame
+    timings, change regions, damage and presentation cost come out.
+- M1. ADR 0003 (capture path and the adapter boundary) and ADR 0004 (overlay properties are asserted, not assumed).
+- M1. CI workflow at `.github/workflows/ci.yml` covering fmt, clippy with warnings denied, tests and a pipeline run on
+  `ubuntu-latest` and `windows-latest`, plus lint and build for the interface.
+- M1. Verified green: CI run 35629894251 passes on all three jobs (Rust ubuntu, Rust windows, interface). The Windows
+  adapters compile against `windows` 0.58 with its `Param<T>` calling convention, and the full test suite passes on
+  both platforms.
 
 ## Next
 
-- M1. Capture adapter, tile change detection, overlay window, headless pipeline CLI.
+- M2. OCR engines behind one trait, the UI Automation text source, layout analysis, language identification, and the
+  character error rate benchmark.
 
 ## Known limitations
 
-- The interface currently reads from mocked state, not from a running pipeline. Every control is wired and changes real
-  application state; none of it yet reaches Windows APIs.
-- No Rust code exists yet.
+- The harness synthesises one overlay block per changed region. Real recognised text arrives in M2.
+- `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces it, as recorded in
+  ADR 0003.
 
 ## Blocked
 
-- No Rust toolchain can be installed in the development sandbox: `static.rust-lang.org` is unreachable from it, so
-  `rustup` fails at the TLS handshake. Rust milestones need either an allowed mirror or GitHub Actions runners.
+- The development environment cannot resolve a Rust toolchain or dependencies locally. All Rust verification happens
+  on GitHub Actions.
 
 ## Needed from the owner
 
-- A code-signing certificate (SignPath or Azure Trusted Signing) before any installer can ship.
-- A decision on whether online engines (DeepL, Google, Microsoft) should be offered at all; if so, the terms under
-  which keys are supplied.
+- A code-signing certificate before M6, as agreed; not a blocker until then.
