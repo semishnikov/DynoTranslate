@@ -47,15 +47,21 @@ pub fn span_from_element(name: &str, screen_bounds: Rect, screen_origin: (i32, i
 }
 
 #[cfg(windows)]
-use crate::source::SourceError;
+use crate::source::{SourceError, TextSource};
+#[cfg(windows)]
+use lumen_core::Frame;
 #[cfg(windows)]
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
 #[cfg(windows)]
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
+use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker};
 
-/// A [`TextSource`](crate::source::TextSource) over the live UI Automation element tree.
+/// A [`TextSource`] over the live UI Automation element tree.
+///
+/// The control view is walked from the desktop root; every named, on-screen element becomes one
+/// span. The walk is bounded by [`MAX_ELEMENTS`] and [`MAX_DEPTH`] so a pathological tree cannot
+/// stall the pipeline.
 #[cfg(windows)]
 pub struct UiaSource {
     automation: IUIAutomation,
@@ -85,6 +91,9 @@ impl Drop for ComGuard {
 impl UiaSource {
     /// Starts a UI Automation client. `screen_origin` is where the captured frame sits on the
     /// desktop; UIA reports desktop coordinates and spans come back in frame coordinates.
+    ///
+    /// COM is initialised for this thread where it was not already: a thread that initialised it
+    /// in another apartment keeps it, and the client works either way.
     pub fn new(screen_origin: (i32, i32)) -> Result<Self, SourceError> {
         let com_owned = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
         let automation: IUIAutomation =
@@ -97,6 +106,74 @@ impl UiaSource {
             screen_origin,
             _com: ComGuard { owned: com_owned },
         })
+    }
+
+    fn walk(
+        &self,
+        walker: &IUIAutomationTreeWalker,
+        element: &IUIAutomationElement,
+        depth: usize,
+        frame: &Rect,
+        out: &mut Vec<TextSpan>,
+        visited: &mut usize,
+    ) {
+        if depth >= MAX_DEPTH || *visited >= MAX_ELEMENTS {
+            return;
+        }
+        *visited += 1;
+        if let (Ok(name), Ok(rect)) = (unsafe { element.CurrentName() }, unsafe {
+            element.CurrentBoundingRectangle()
+        }) {
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+            if width > 0 && height > 0 {
+                let bounds = Rect::new(rect.left, rect.top, width as u32, height as u32);
+                if let Some(span) = span_from_element(&name.to_string(), bounds, self.screen_origin, frame) {
+                    out.push(span);
+                }
+            }
+        }
+        if depth + 1 >= MAX_DEPTH {
+            return;
+        }
+        if let Ok(mut child) = unsafe { walker.GetFirstChildElement(element) } {
+            // The sibling count is a second guard: a broken walker that keeps returning the same
+            // element would otherwise spin until the budget below runs out.
+            let mut siblings = 0;
+            loop {
+                self.walk(walker, &child, depth + 1, frame, out, visited);
+                siblings += 1;
+                if *visited >= MAX_ELEMENTS || siblings >= MAX_ELEMENTS {
+                    break;
+                }
+                match unsafe { walker.GetNextSiblingElement(&child) } {
+                    Ok(sibling) => child = sibling,
+                    Err(_) => break,
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+impl TextSource for UiaSource {
+    fn name(&self) -> &str {
+        "ui-automation"
+    }
+
+    fn snapshot(&mut self, frame: &Frame) -> Result<Vec<TextSpan>, SourceError> {
+        let walker = unsafe { self.automation.ControlViewWalker() }.map_err(|error| SourceError::Failed {
+            name: "ui-automation".to_owned(),
+            detail: error.message(),
+        })?;
+        let root = unsafe { self.automation.GetRootElement() }.map_err(|error| SourceError::Failed {
+            name: "ui-automation".to_owned(),
+            detail: error.message(),
+        })?;
+        let mut spans = Vec::new();
+        let mut visited = 0;
+        self.walk(&walker, &root, 0, &frame.bounds(), &mut spans, &mut visited);
+        Ok(spans)
     }
 }
 
