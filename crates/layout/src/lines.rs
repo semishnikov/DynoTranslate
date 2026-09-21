@@ -23,10 +23,8 @@ impl Line {
     /// A line holding a single run.
     pub fn single(run: TextRun) -> Self {
         let bounds = run.bounds;
-        Self {
-            runs: vec![run],
-            bounds,
-        }
+        let runs = vec![run];
+        Self { runs, bounds }
     }
 
     /// The row's characters in reading order. Fragments are joined with a space, which restores the

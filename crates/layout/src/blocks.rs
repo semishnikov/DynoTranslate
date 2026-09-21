@@ -121,11 +121,7 @@ impl<'a> Context<'a> {
     fn new(frame: &Frame, config: &'a LayoutConfig) -> Self {
         let page = frame.bounds();
         let dominant = modal_colour(frame, page);
-        Self {
-            page,
-            dominant,
-            config,
-        }
+        Self { page, dominant, config }
     }
 }
 
@@ -276,7 +272,7 @@ fn alignment_of(bounds: Rect, context: Context) -> Alignment {
     if (centre - page_centre).abs() <= tolerance {
         return Alignment::Center;
     }
-    if (page.right() - bounds.right()).abs() <= tolerance {
+    if ((page.right() - bounds.right()).abs() as f32) <= tolerance {
         return Alignment::Right;
     }
     Alignment::Left

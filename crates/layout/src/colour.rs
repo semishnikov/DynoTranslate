@@ -106,7 +106,7 @@ fn ink(frame: &Frame, bounds: Rect, background: [u8; 4]) -> [u8; 4] {
 /// Sampling stride that keeps the sample count bounded whatever the region's size.
 fn sample_step(region: Rect) -> usize {
     let longest = region.width.max(region.height);
-    usize::from(longest / SAMPLES_PER_SIDE).max(1)
+    ((longest / SAMPLES_PER_SIDE) as usize).max(1)
 }
 
 /// Adds a sample to the closest bucket it already has, or opens a bucket for it.
