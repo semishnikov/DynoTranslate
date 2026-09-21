@@ -46,17 +46,6 @@ pub fn span_from_element(name: &str, screen_bounds: Rect, screen_origin: (i32, i
     })
 }
 
-#[cfg(windows)]
-use crate::source::{SourceError, TextSource};
-#[cfg(windows)]
-use lumen_core::Frame;
-#[cfg(windows)]
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
-};
-#[cfg(windows)]
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker};
-
 #[cfg(test)]
 mod tests {
     use super::*;
