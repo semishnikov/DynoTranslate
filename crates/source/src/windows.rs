@@ -157,7 +157,7 @@ fn text_lines(element: &IUIAutomationElement, frame: Rect) -> Vec<TextRun> {
 /// stopped advancing.
 fn lines_of(pattern: &IUIAutomationTextPattern, frame: Rect) -> Result<Vec<TextRun>, SourceError> {
     let document = unsafe { pattern.DocumentRange() }.map_err(|error| failed("DocumentRange", &error))?;
-    let mut cursor = unsafe { document.Clone() }.map_err(|error| failed("Clone", &error))?;
+    let cursor = unsafe { document.Clone() }.map_err(|error| failed("Clone", &error))?;
     collapse_to_start(&cursor)?;
 
     let mut runs = Vec::new();

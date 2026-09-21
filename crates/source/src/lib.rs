@@ -64,7 +64,7 @@ pub struct ReadRequest<'a> {
     /// sources ignore it.
     pub target: &'a TextTarget,
     /// Regions worth reading, in frame pixels. Empty means the whole frame.
-    pub regions: &[Rect],
+    pub regions: &'a [Rect],
 }
 
 /// One run of text a source found.

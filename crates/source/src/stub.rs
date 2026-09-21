@@ -72,12 +72,8 @@ mod tests {
         TextRun::new(text, Rect::new(x, y, 10, 10), SourceKind::UiAutomation, 1.0)
     }
 
-    fn request(frame: &Frame, target: &TextTarget, regions: &[Rect]) -> ReadRequest<'_> {
-        ReadRequest {
-            frame,
-            target,
-            regions,
-        }
+    fn request<'a>(frame: &'a Frame, target: &'a TextTarget, regions: &'a [Rect]) -> ReadRequest<'a> {
+        ReadRequest { frame, target, regions }
     }
 
     fn target() -> TextTarget {
