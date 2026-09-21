@@ -1,30 +1,23 @@
 #!/usr/bin/env python3
-"""Cargo rustc-wrapper shim: relay to the real compiler, surface failures as annotations."""
+"""Cargo rustc-wrapper shim: relay to the real compiler, surface failures as annotations.
+
+Invoked as: rustc-wrapper <program> <args...>, where <program> is rustc or clippy-driver
+(a bare name or a full path). Diagnostics are re-emitted as GitHub Actions annotations so
+they are readable through the API even when job logs are unreachable. TEMPORARY.
+"""
 import json
 import os
 import subprocess
 import sys
 
 
-def find_real(prog):
-    name = prog + (".exe" if os.name == "nt" else "")
-    me = os.path.realpath(__file__)
-    for entry in os.environ.get("PATH", "").split(os.pathsep):
-        if not entry:
-            continue
-        cand = os.path.realpath(os.path.join(entry, name))
-        if os.path.isfile(cand) and cand != me:
-            return cand
-    sys.exit("shim: %s not found on PATH" % name)
-
-
 def escape(text):
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
-prog = os.path.basename(sys.argv[0])
-args = sys.argv[1:]
-proc = subprocess.run([find_real(prog)] + args, capture_output=True, close_fds=False)
+program = sys.argv[1]
+args = sys.argv[2:]
+proc = subprocess.run([program] + args, capture_output=True, close_fds=False)
 sys.stdout.buffer.write(proc.stdout)
 sys.stdout.flush()
 sys.stderr.buffer.write(proc.stderr)
