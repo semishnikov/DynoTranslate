@@ -47,6 +47,11 @@ Updated: 2026-09-21
 ## Next
 
 - M3. Token protection, translation memory, the offline engine and pack manager.
+
+## Known limitations
+
+- The harness stands a scripted engine in for recognition and attaches no UIA source to its merge, so the pipeline is
+  deterministic on both platforms; the live `UiaSource` is exercised by the shell integration, not the harness.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces it, as recorded in
   ADR 0003.
 
