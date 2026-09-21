@@ -26,10 +26,20 @@ Updated: 2026-09-21
 - M2. `lumen-ocr`: the `OcrEngine` trait (`recognize` over regions, one entry per line), the scripted `StubEngine`
   double, and the character error rate benchmark runner with per-case and mean scored reports. Verified green on both
   platforms (CI run 35632210937, draft PR #4).
+- M2. `lumen-ocr` text layers. `source`: `TextSpan` (`TextOrigin::{Ocr, Automation}`, bounds, confidence), the
+  `TextSource` snapshot contract, `OcrSource` over any engine, and `merge()` folding recognition and UI Automation
+  views — empty spans dropped, pairs overlapping with IoU ≥ 0.5 take the automation text over the recognition bounds,
+  reading order preserved. `layout`: `analyze()` groups lines into blocks (same plate and language, horizontal
+  overlap, at most half a line of leading) classified as button, tooltip, dialogue, menu, subtitle or body from text
+  size and aspect ratio, with background (most frequent opaque pixel) and text colour (second) sampled per block.
+  `language`: `identify()` names en/ru/ja/zh/ko/ar/he/el/und from Unicode blocks alone (kana and Hangul are decisive
+  over Han). Verified green on both platforms (CI run 35638528319, PR #5): 34/34 tests, clippy `-D warnings` and
+  rustfmt clean.
 
 ## Next
 
-- M2. The UI Automation text source (Windows), layout analysis (reading order, blocks), and language identification.
+- M2. The UI Automation text source (Windows), then wiring the text source and layout analysis into the pipeline
+  harness in place of its per-region placeholder blocks.
 
 ## Known limitations
 
@@ -39,8 +49,10 @@ Updated: 2026-09-21
 
 ## Blocked
 
-- The development environment cannot resolve a Rust toolchain or dependencies locally. All Rust verification happens
-  on GitHub Actions.
+- The sandbox cannot reach `static.rust-lang.org` or `crates.io`, so the full workspace (Windows adapters, the
+  `png`/`serde_json`/`tracing` tree) still builds only on GitHub Actions. The `lumen-ocr` slice was additionally
+  verified before the push with a locally assembled toolchain (rustc 1.88 from npm `@rustbin`, dependencies vendored
+  from GitHub): all 34 tests, clippy with warnings denied, and rustfmt clean.
 
 ## Needed from the owner
 
