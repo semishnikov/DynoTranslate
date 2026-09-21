@@ -13,10 +13,11 @@ use windows::Win32::Graphics::Gdi::{
     BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowDisplayAffinity, RegisterClassExW, SetLayeredWindowAttributes,
-    SetWindowDisplayAffinity, SetWindowPos, ShowWindow, UpdateLayeredWindow, CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST,
-    LWA_ALPHA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNA, ULW_ALPHA, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
-    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowDisplayAffinity, RegisterClassExW,
+    SetLayeredWindowAttributes, SetWindowDisplayAffinity, SetWindowPos, ShowWindow, UpdateLayeredWindow, CS_HREDRAW,
+    CS_VREDRAW, HWND_TOPMOST, LWA_ALPHA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNA, ULW_ALPHA,
+    WDA_EXCLUDEFROMCAPTURE, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 use crate::compositor::CLEAR;
@@ -66,7 +67,7 @@ impl LayeredOverlay {
 
         unsafe {
             let _ = SetLayeredWindowAttributes(handle, COLORREF(0), 255, LWA_ALPHA);
-            let _ = SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let _ = SetWindowPos(handle, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             let _ = ShowWindow(handle, SW_SHOWNA);
         }
 
@@ -84,7 +85,7 @@ impl LayeredOverlay {
         unsafe {
             SetWindowPos(
                 self.handle,
-                HWND_TOPMOST,
+                Some(HWND_TOPMOST),
                 bounds.x,
                 bounds.y,
                 bounds.width as i32,
@@ -127,9 +128,9 @@ impl OverlaySurface for LayeredOverlay {
     }
 
     fn properties(&self) -> SurfaceProperties {
-        let mut affinity = WDA_NONE;
+        let mut affinity = 0u32;
         let excluded = unsafe { GetWindowDisplayAffinity(self.handle, &mut affinity) }.is_ok()
-            && affinity == WDA_EXCLUDEFROMCAPTURE;
+            && affinity == WDA_EXCLUDEFROMCAPTURE.0;
         SurfaceProperties {
             click_through: true,
             never_activates: true,
@@ -174,10 +175,10 @@ impl OverlaySurface for LayeredOverlay {
         unsafe {
             UpdateLayeredWindow(
                 self.handle,
-                screen.dc,
+                Some(screen.dc),
                 Some(&self.origin),
                 Some(&size),
-                dib.dc,
+                Some(dib.dc),
                 Some(&source),
                 COLORREF(0),
                 Some(&blend),
@@ -236,7 +237,7 @@ struct ScreenDc {
 
 impl ScreenDc {
     fn acquire() -> Result<Self, SurfaceError> {
-        let dc = unsafe { GetDC(HWND::default()) };
+        let dc = unsafe { GetDC(None) };
         if dc.is_invalid() {
             return Err(SurfaceError::Platform {
                 operation: "GetDC",
@@ -249,7 +250,7 @@ impl ScreenDc {
 
 impl Drop for ScreenDc {
     fn drop(&mut self) {
-        unsafe { ReleaseDC(HWND::default(), self.dc) };
+        unsafe { ReleaseDC(None, self.dc) };
     }
 }
 
@@ -262,7 +263,7 @@ struct DibSection {
 
 impl DibSection {
     fn create(screen: &ScreenDc, width: u32, height: u32) -> Result<Self, SurfaceError> {
-        let dc = unsafe { CreateCompatibleDC(screen.dc) };
+        let dc = unsafe { CreateCompatibleDC(Some(screen.dc)) };
         if dc.is_invalid() {
             return Err(SurfaceError::Platform {
                 operation: "CreateCompatibleDC",
@@ -284,14 +285,14 @@ impl DibSection {
         };
 
         let mut bits: *mut c_void = std::ptr::null_mut();
-        let bitmap = unsafe { CreateDIBSection(screen.dc, &info, DIB_RGB_COLORS, &mut bits, None, 0) }.map_err(
+        let bitmap = unsafe { CreateDIBSection(Some(screen.dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) }.map_err(
             |error| SurfaceError::Platform {
                 operation: "CreateDIBSection",
                 detail: error.message(),
             },
         )?;
 
-        unsafe { SelectObject(dc, bitmap) };
+        unsafe { SelectObject(dc, bitmap.into()) };
         Ok(Self {
             dc,
             bitmap,
@@ -311,7 +312,7 @@ impl DibSection {
 impl Drop for DibSection {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteObject(self.bitmap);
+            let _ = DeleteObject(self.bitmap.into());
             let _ = DeleteDC(self.dc);
         }
     }

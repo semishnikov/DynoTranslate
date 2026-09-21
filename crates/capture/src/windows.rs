@@ -178,7 +178,7 @@ impl DesktopCopySource {
                 0,
                 bounds.width as i32,
                 bounds.height as i32,
-                screen.dc,
+                Some(screen.dc),
                 bounds.x,
                 bounds.y,
                 SRCCOPY,
@@ -249,7 +249,7 @@ struct ScreenContext {
 
 impl ScreenContext {
     fn acquire() -> Result<Self, CaptureError> {
-        let dc = unsafe { GetDC(HWND::default()) };
+        let dc = unsafe { GetDC(None) };
         if dc.is_invalid() {
             return Err(CaptureError::Platform {
                 operation: "GetDC",
@@ -262,7 +262,7 @@ impl ScreenContext {
 
 impl Drop for ScreenContext {
     fn drop(&mut self) {
-        unsafe { ReleaseDC(HWND::default(), self.dc) };
+        unsafe { ReleaseDC(None, self.dc) };
     }
 }
 
@@ -273,7 +273,7 @@ struct MemoryContext {
 
 impl MemoryContext {
     fn compatible_with(screen: &ScreenContext, width: u32, height: u32) -> Result<Self, CaptureError> {
-        let dc = unsafe { CreateCompatibleDC(screen.dc) };
+        let dc = unsafe { CreateCompatibleDC(Some(screen.dc)) };
         if dc.is_invalid() {
             return Err(CaptureError::Platform {
                 operation: "CreateCompatibleDC",
@@ -288,7 +288,7 @@ impl MemoryContext {
                 detail: format!("no {width}x{height} bitmap could be allocated"),
             });
         }
-        unsafe { SelectObject(dc, bitmap) };
+        unsafe { SelectObject(dc, bitmap.into()) };
         Ok(Self { dc, bitmap })
     }
 }
@@ -296,7 +296,7 @@ impl MemoryContext {
 impl Drop for MemoryContext {
     fn drop(&mut self) {
         unsafe {
-            let _ = DeleteObject(self.bitmap);
+            let _ = DeleteObject(self.bitmap.into());
             let _ = DeleteDC(self.dc);
         }
     }

@@ -18,8 +18,6 @@ pub struct ChangeDetector {
 struct Grid {
     width: u32,
     height: u32,
-    columns: u32,
-    rows: u32,
     hashes: Vec<u64>,
 }
 
@@ -90,8 +88,6 @@ impl ChangeDetector {
         self.grid = Some(Grid {
             width: frame.width(),
             height: frame.height(),
-            columns,
-            rows,
             hashes,
         });
 
