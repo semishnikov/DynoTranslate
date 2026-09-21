@@ -19,12 +19,17 @@ Updated: 2026-09-21
   `ubuntu-latest` and `windows-latest`, plus lint and build for the interface.
 - M1. Verified green: CI run 35629894251 passes on all three jobs (Rust ubuntu, Rust windows, interface). The Windows
   adapters compile against `windows` 0.58 with its `Param<T>` calling convention, and the full test suite passes on
-  both platforms.
+  both platforms. Merged to `main` as `dea9a45` (PR #3); the disconnected PR #2 was closed as superseded.
+
+## Done (M2, in progress)
+
+- M2. `lumen-ocr`: the `OcrEngine` trait (`recognize` over regions, one entry per line), the scripted `StubEngine`
+  double, and the character error rate benchmark runner with per-case and mean scored reports. Verified green on both
+  platforms (CI run 35632210937, draft PR #4).
 
 ## Next
 
-- M2. OCR engines behind one trait, the UI Automation text source, layout analysis, language identification, and the
-  character error rate benchmark.
+- M2. The UI Automation text source (Windows), layout analysis (reading order, blocks), and language identification.
 
 ## Known limitations
 
