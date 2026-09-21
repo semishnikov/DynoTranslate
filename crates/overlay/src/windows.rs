@@ -237,7 +237,7 @@ fn register_class() -> Result<(), SurfaceError> {
         ..Default::default()
     };
     // A duplicate registration is expected whenever a second overlay is created in one process.
-    unsafe { RegisterClassExW(&class) };
+    let _ = unsafe { RegisterClassExW(&class) };
     Ok(())
 }
 

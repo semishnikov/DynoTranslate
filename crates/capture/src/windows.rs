@@ -35,7 +35,7 @@ pub fn enumerate_targets() -> Result<Vec<CaptureTarget>, CaptureError> {
         detail: error.message(),
     })?;
 
-    found.sort_by(|left, right| right.bounds.area().cmp(&left.bounds.area()));
+    found.sort_by_key(|target| std::cmp::Reverse(target.bounds.area()));
     Ok(found)
 }
 
