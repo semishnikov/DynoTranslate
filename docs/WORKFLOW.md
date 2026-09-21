@@ -112,9 +112,22 @@ locally. Consequences to plan for:
 
 - Code is written against the published signatures of its dependencies and verified by CI. Read
   the dependency's real source before relying on an API; do not rely on memory.
-- Formatting has to be predicted. `rustfmt.toml` sets `edition = "2021"` and `max_width = 120`;
-  with the default heuristics that makes `fn_call_width` and `chain_width` 72 and
-  `struct_lit_width` 21, which decides whether a construct stays on one line.
+- Formatting has to be predicted, so these are the thresholds that matter, each one checked
+  against code the workflow already accepted rather than assumed from the option names. With
+  `max_width = 120` and the default heuristics:
+  - **Function parameters** stay on one line up to the full width; parameters of 75 characters are
+    still one line in this repository.
+  - **Call arguments** stay on one line up to 72 characters. Above that the call breaks, one
+    argument per line, unless the last argument is itself delimited — an array, a `vec![]`, a block
+    or a closure — in which case it may overflow as far as the width limit.
+  - **Method chains** follow a different rule depending on their shape. A chain with a single child
+    (`Frame::filled(...).expect(...)`) may run to the width limit; a chain with two or more children
+    is capped at 72 and breaks after the receiver. This one is worth remembering: it is the only
+    rule where a short-looking expression still has to be split.
+  - **Struct literals** stay on one line when the whole literal is short (31 characters is on one
+    line here) and break vertically above roughly 38, with a trailing comma.
+  - Import order is `self`, `super`, `crate`, then identifiers, then globs; within a brace list,
+    lowercase names come before capitalised ones, and those before `SCREAMING_CASE`.
 - Nothing is claimed to build, pass or be formatted until the workflow says so. A change that has
   been pushed but not yet green is described as pushed, not as done.
 

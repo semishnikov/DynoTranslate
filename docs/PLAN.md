@@ -61,10 +61,11 @@ contract and how to read a failing build are in `docs/WORKFLOW.md`.
 | M7 | Release: signed installer, winget manifest, QA report, manual test plan | not started |
 
 M2 breaks down into: OCR engines behind `OcrEngine` (trait, scripted double and CER benchmark:
-done), the `TextSource` abstraction with the UI Automation adapter and the source merge (done),
-layout analysis — grouping runs into lines, blocks and UI elements with reading order, foreground
-and background colour and font metrics (not started), language identification (not started), and
-the synthetic corpus generator with CER thresholds enforced in CI (not started).
+done); the `TextSource` abstraction with the UI Automation adapter and the source merge (done);
+layout analysis — runs to lines to blocks, classified, aligned, with foreground and background
+measured per block (done); language identification (not started); and the synthetic corpus
+generator with CER thresholds enforced in CI (not started). Font weight and text effects per block
+are deliberately left to M4, where the renderer needs them.
 
 ## Pipeline
 

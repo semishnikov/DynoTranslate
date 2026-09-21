@@ -40,40 +40,51 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
     accessibility tree, reads each element's text pattern line by line and its value pattern as a
     fallback, converts desktop coordinates into frame pixels and discards off-screen elements.
   - 22 unit tests over the portable half. Open as draft PR #6.
+- **M2, layout analysis.** `lumen-layout`, the portable stage between the text sources and
+  translation:
+  - `group_lines` joins runs that share a baseline into rows, by vertical overlap and by a
+    horizontal gap measured in line heights.
+  - `group_blocks` joins rows that sit close vertically and share a column into one paragraph,
+    list or dialogue box.
+  - `analyse` classifies every block as a button, menu entry, tooltip, dialogue, subtitle or label
+    from geometry and measured colour, works out whether it is left, centred or right in the
+    window, and reports an estimated glyph height and a confidence.
+  - Colour sampling measures rather than assumes: the background is the modal colour of a ring
+    just outside the text, the foreground the commonest colour inside it that is not that
+    background, with a legibility fallback when a block has no ink of its own to measure.
+  - 30 unit tests, 935 lines, no platform code.
 
 ## Verification
 
-- CI run 35647599786 at `97ea601` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
-  `Interface`. That covers formatting, clippy with warnings denied, the 22 tests in `lumen-source`,
-  and the headless pipeline run on both platforms. `3eb7de4` is the last commit that touched the
-  Rust workspace; everything after it is documentation.
-- Getting there took four diagnosed failures: three compile errors (an elided lifetime in a struct
-  field, an anonymous lifetime in a return position with several input lifetimes, an `unused_mut`),
-  three `clippy::vec_init_then_push` findings in the tests, and two formatting differences.
-- `windows.rs` compiles only on `windows-latest` and has no tests of its own: it needs a real
-  desktop session to be exercised. Its correctness is currently limited to "it type-checks and
-  lints clean on Windows".
-- Nothing in `lumen-source` has been run against a real application.
+- CI run 35653140418 at `ceff233` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
+  `Interface`: formatting, clippy with warnings denied, the 22 tests in `lumen-source` and the 30
+  in `lumen-layout`, and the headless pipeline run on both platforms.
+- `lumen-layout` is portable, so every line of it is compiled, linted and tested on Linux as well
+  as on Windows. The classification thresholds are pinned by tests rather than left to judgement.
+- `lumen-source/src/windows.rs` compiles only on `windows-latest` and has no tests of its own: it
+  needs a real desktop session. Its correctness is limited to "it type-checks and lints clean on
+  Windows".
+- Neither crate has been run against a real application, and no real screenshot has been through
+  the layout analysis. The classification is verified against synthetic geometry only.
 
 ## Next
 
-1. **M2, layout analysis.** Group runs into lines, blocks and UI elements using geometry,
-   alignment, colour and font metrics; preserve reading order; sample foreground and background
-   per block. Not started on this branch.
+1. Wire a source and the layout analysis into `lumen-pipeline`, replacing the stand-in that emits
+   one block per changed region, and report the blocks in the JSON output.
 2. **M2, language identification.** Unicode script analysis first, then text-level detection, with
-   per-application stickiness and hysteresis. Not started on this branch.
+   per-application stickiness and hysteresis. Not started.
 3. **M2, corpus generator.** Synthetic scenes across fonts, scripts and backgrounds with CER
    thresholds enforced in CI. Not started.
-4. Wire a source into `lumen-pipeline`, replacing the stand-in that emits one block per changed
-   region.
+4. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
+   in M4.
 
-PR #6 stays a draft until the branch conflict below is decided; its build is green and the slice
-it carries is complete.
+PR #6 stays a draft until the branch conflict below is decided; its build is green and the slices
+it carries are complete.
 
 ## Known limitations
 
-- The harness synthesises one overlay block per changed region. Real recognised text arrives with
-  the layout work above.
+- The harness still synthesises one overlay block per changed region. The source and layout stages
+  exist and are tested but are not wired into it yet.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces
   it, as recorded in ADR 0003.
 - There is no `LICENSE` file in the repository. See the open decisions in `docs/PLAN.md`.
