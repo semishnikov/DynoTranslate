@@ -14,7 +14,9 @@ path = "src/main.rs"
 [dependencies]
 lumen-capture = { workspace = true }
 lumen-core = { workspace = true }
+lumen-layout = { workspace = true }
 lumen-overlay = { workspace = true }
+lumen-source = { workspace = true }
 png = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

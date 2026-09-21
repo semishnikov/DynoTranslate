@@ -7,6 +7,7 @@
 
 mod report;
 mod run;
+mod source;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

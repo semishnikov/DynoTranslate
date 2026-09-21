@@ -8,6 +8,9 @@ pub struct FrameRecord {
     pub total_tiles: usize,
     pub changed_fraction: f32,
     pub change_regions: Vec<Rect>,
+    /// The text the pipeline produced for this frame, so a report says what was translated and
+    /// where, not only how fast.
+    pub blocks: Vec<BlockRecord>,
     pub overlay_damage: Vec<Rect>,
     pub presented_pixels: u64,
     pub capture_rate_hz: f32,
@@ -15,6 +18,12 @@ pub struct FrameRecord {
     pub detect_micros: u128,
     pub compose_micros: u128,
     pub overlay_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockRecord {
+    pub rect: Rect,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

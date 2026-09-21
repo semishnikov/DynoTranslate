@@ -6,11 +6,14 @@ use std::time::Instant;
 use lumen_capture::synthetic::{Scene, SyntheticSource};
 use lumen_capture::CaptureSource;
 use lumen_core::{CaptureScheduler, ChangeDetector, Frame, Rect, SchedulerConfig};
+use lumen_layout::{analyse, Block, LayoutConfig};
 use lumen_overlay::compositor::Compositor;
 use lumen_overlay::surface::{MemorySurface, OverlaySurface};
 use lumen_overlay::{OverlayBlock, OverlayLayout};
+use lumen_source::{merge, MergePolicy, ReadRequest, TextTarget};
 
-use crate::report::{percentile, FrameRecord, Report, Totals};
+use crate::report::{percentile, BlockRecord, FrameRecord, Report, Totals};
+use crate::source::SceneTextSource;
 use crate::Options;
 
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +22,8 @@ pub enum RunError {
     UnknownScene(String),
     #[error("capture failed: {0}")]
     Capture(#[from] lumen_capture::CaptureError),
+    #[error("a text source failed: {0}")]
+    Source(#[from] lumen_source::SourceError),
     #[error("the overlay surface rejected a frame: {0}")]
     Surface(#[from] lumen_overlay::SurfaceError),
     #[error("{path}: {source}")]
@@ -34,7 +39,7 @@ pub enum RunError {
 }
 
 pub fn execute(options: &Options) -> Result<String, RunError> {
-    let (source_name, frames) = load_frames(options)?;
+    let (source_name, frames, scene) = load_frames(options)?;
     let (width, height) = frames
         .first()
         .map(|frame| (frame.width(), frame.height()))
@@ -53,6 +58,14 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     let mut compositor = Compositor::new();
     let mut surface = MemorySurface::new(width, height);
 
+    let mut text_source = scene.map(SceneTextSource::new);
+    let target = TextTarget {
+        id: 1,
+        bounds: Rect::new(0, 0, width, height),
+    };
+    let merge_policy = MergePolicy::default();
+    let layout_config = LayoutConfig::default();
+
     let mut records = Vec::with_capacity(frames.len());
     let mut static_frames = 0;
     let mut presented_before = 0u64;
@@ -66,7 +79,24 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             static_frames += 1;
         }
 
-        let layout = OverlayLayout::new(options.style).with_blocks(blocks_for(&change.regions));
+        let blocks = match &mut text_source {
+            Some(source) => {
+                // The whole frame is read rather than only the regions that changed: text that
+                // stopped moving is still on screen and still needs its translation. Skipping
+                // work on unchanged tiles belongs to M4, where the previous pass can be reused
+                // instead of recomputed.
+                let request = ReadRequest {
+                    frame,
+                    target: &target,
+                    regions: &[],
+                };
+                let runs = merge(source.read(&request)?, &merge_policy);
+                overlay_blocks(&analyse(frame, runs, &layout_config))
+            }
+            None => region_blocks(&change.regions),
+        };
+        let reported = describe_blocks(&blocks);
+        let layout = OverlayLayout::new(options.style).with_blocks(blocks);
 
         let started = Instant::now();
         let composition = compositor.compose(width, height, &layout);
@@ -92,6 +122,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             total_tiles: change.total_tiles,
             changed_fraction: change.changed_fraction(),
             change_regions: change.regions,
+            blocks: reported,
             overlay_damage: composition.damage,
             presented_pixels,
             capture_rate_hz: scheduler.current_hz(),
@@ -145,9 +176,32 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     ))
 }
 
-/// Stands in for recognised text until M2 lands: one block per changed region, which is enough to
-/// exercise erasure, damage tracking and presentation cost.
-fn blocks_for(regions: &[Rect]) -> Vec<OverlayBlock> {
+/// What the compositor draws for a set of analysed blocks.
+fn overlay_blocks(blocks: &[Block]) -> Vec<OverlayBlock> {
+    blocks
+        .iter()
+        .map(|block| {
+            OverlayBlock::new(block.bounds, block.text())
+                .with_colors(block.background, block.foreground)
+                .with_confidence(block.confidence)
+        })
+        .collect()
+}
+
+fn describe_blocks(blocks: &[OverlayBlock]) -> Vec<BlockRecord> {
+    blocks
+        .iter()
+        .map(|block| BlockRecord {
+            rect: block.rect,
+            text: block.text.clone(),
+        })
+        .collect()
+}
+
+/// Stands in for recognition on a plain PNG. No engine reads an image yet, so one block is drawn
+/// per changed region, which is enough to exercise erasure, damage tracking and presentation cost.
+/// A scene goes through the real path: text source, merge, layout analysis.
+fn region_blocks(regions: &[Rect]) -> Vec<OverlayBlock> {
     regions
         .iter()
         .enumerate()
@@ -157,10 +211,10 @@ fn blocks_for(regions: &[Rect]) -> Vec<OverlayBlock> {
         .collect()
 }
 
-fn load_frames(options: &Options) -> Result<(String, Vec<Frame>), RunError> {
+fn load_frames(options: &Options) -> Result<(String, Vec<Frame>, Option<Scene>), RunError> {
     if let Some(path) = &options.input {
         let frame = read_png(path)?;
-        return Ok((path.display().to_string(), vec![frame]));
+        return Ok((path.display().to_string(), vec![frame], None));
     }
 
     let name = options.scene.as_deref().unwrap_or("menu");
@@ -169,12 +223,12 @@ fn load_frames(options: &Options) -> Result<(String, Vec<Frame>), RunError> {
         other => return Err(RunError::UnknownScene(other.to_owned())),
     };
 
-    let mut source = SyntheticSource::new(scene);
+    let mut source = SyntheticSource::new(scene.clone());
     let mut frames = Vec::new();
     while let Some(frame) = source.next_frame()? {
         frames.push(frame);
     }
-    Ok((format!("scene:{name}"), frames))
+    Ok((format!("scene:{name}"), frames, Some(scene)))
 }
 
 fn read_png(path: &Path) -> Result<Frame, RunError> {
@@ -276,6 +330,20 @@ mod tests {
         let report: Report = serde_json::from_str(&text).unwrap();
         assert_eq!(report.totals.frames, 8);
         assert!(report.totals.static_frames > 0);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_scene_run_reports_the_text_the_pipeline_read() {
+        let dir = temp_dir("text");
+        execute(&options(&dir)).unwrap();
+        let text = fs::read_to_string(dir.join("report.json")).unwrap();
+        let report: Report = serde_json::from_str(&text).unwrap();
+
+        let last = report.frames.last().expect("a frame");
+        let found: Vec<&str> = last.blocks.iter().map(|block| block.text.as_str()).collect();
+        assert!(found.iter().any(|text| text.contains("Настройки")), "{found:?}");
+        assert!(last.blocks.iter().all(|block| !block.text.is_empty()));
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -12,6 +12,9 @@ use crate::{CaptureError, CaptureSource, CaptureTarget};
 pub struct SceneBlock {
     pub rect: Rect,
     pub color: [u8; 4],
+    /// The text the block stands for. A scene stands in for a screen, and a screen has words on it;
+    /// carrying them here is what lets the harness drive the real text pipeline instead of a stub.
+    pub text: String,
     /// Frame index from which the block is drawn.
     pub appears_at: usize,
     /// Frame index from which the block is no longer drawn.
@@ -19,10 +22,11 @@ pub struct SceneBlock {
 }
 
 impl SceneBlock {
-    pub fn new(rect: Rect, color: [u8; 4]) -> Self {
+    pub fn new(rect: Rect, color: [u8; 4], text: impl Into<String>) -> Self {
         Self {
             rect,
             color,
+            text: text.into(),
             appears_at: 0,
             disappears_at: None,
         }
@@ -61,15 +65,27 @@ impl Scene {
             height,
             background: [28, 24, 20, 255],
             blocks: vec![
-                SceneBlock::new(Rect::new(64, 64, 320, 34), [214, 210, 204, 255]).from_frame(2),
-                SceneBlock::new(Rect::new(64, 112, 320, 34), [214, 210, 204, 255]).from_frame(2),
-                SceneBlock::new(Rect::new(64, 160, 220, 34), [214, 210, 204, 255]).from_frame(2),
-                SceneBlock::new(Rect::new(520, 300, 240, 80), [180, 176, 170, 255])
+                SceneBlock::new(Rect::new(64, 64, 320, 34), [214, 210, 204, 255], "Начать игру").from_frame(2),
+                SceneBlock::new(Rect::new(64, 112, 320, 34), [214, 210, 204, 255], "Продолжить").from_frame(2),
+                SceneBlock::new(Rect::new(64, 160, 220, 34), [214, 210, 204, 255], "Настройки").from_frame(2),
+                SceneBlock::new(Rect::new(520, 300, 240, 36), [180, 176, 170, 255], "Удерживайте кнопку")
+                    .from_frame(5)
+                    .until_frame(7),
+                SceneBlock::new(Rect::new(520, 344, 240, 36), [180, 176, 170, 255], "чтобы открыть меню")
                     .from_frame(5)
                     .until_frame(7),
             ],
             frames: 8,
         }
+    }
+
+    /// The text the scene shows at `index`, with the box each line occupies.
+    pub fn labels_at(&self, index: usize) -> Vec<(Rect, String)> {
+        self.blocks
+            .iter()
+            .filter(|block| block.visible_at(index))
+            .map(|block| (block.rect, block.text.clone()))
+            .collect()
     }
 
     pub fn render(&self, index: usize) -> Result<Frame, lumen_core::FrameError> {
