@@ -134,8 +134,11 @@ gh pr list --state open
 gh pr view <number> --json state,isDraft,headRefName
 gh pr checks <number>
 gh run list --branch <branch>
-gh run watch <run-id>                             # only if the host is reachable
+gh run watch <run-id> --exit-status               # polls the API; exit 0 means every job passed
 ```
+
+`gh run watch` and `gh run view` work, because they only talk to the API. `gh run view --log` does
+not: it fetches from the log host.
 
 Never `git push --force` on a branch another session or person may hold, never commit to `main`,
 and never leave scratch files staged.
