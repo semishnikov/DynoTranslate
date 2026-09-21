@@ -46,6 +46,60 @@ pub fn span_from_element(name: &str, screen_bounds: Rect, screen_origin: (i32, i
     })
 }
 
+#[cfg(windows)]
+use crate::source::SourceError;
+#[cfg(windows)]
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+};
+#[cfg(windows)]
+use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
+
+/// A [`TextSource`](crate::source::TextSource) over the live UI Automation element tree.
+#[cfg(windows)]
+pub struct UiaSource {
+    automation: IUIAutomation,
+    screen_origin: (i32, i32),
+    // Declared after `automation` on purpose: fields drop in declaration order, so the client is
+    // released before the apartment it was initialised for is torn down.
+    _com: ComGuard,
+}
+
+/// Balances the `CoInitializeEx` call in [`UiaSource::new`], but only when that call initialised
+/// COM for this thread.
+#[cfg(windows)]
+struct ComGuard {
+    owned: bool,
+}
+
+#[cfg(windows)]
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+#[cfg(windows)]
+impl UiaSource {
+    /// Starts a UI Automation client. `screen_origin` is where the captured frame sits on the
+    /// desktop; UIA reports desktop coordinates and spans come back in frame coordinates.
+    pub fn new(screen_origin: (i32, i32)) -> Result<Self, SourceError> {
+        let com_owned = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
+        let automation: IUIAutomation =
+            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.map_err(|error| SourceError::Failed {
+                name: "ui-automation".to_owned(),
+                detail: error.message(),
+            })?;
+        Ok(Self {
+            automation,
+            screen_origin,
+            _com: ComGuard { owned: com_owned },
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
