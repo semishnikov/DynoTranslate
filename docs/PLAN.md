@@ -53,8 +53,8 @@ contract and how to read a failing build are in `docs/WORKFLOW.md`.
 | --- | --- | --- |
 | M0 | Repository, plan, architecture, design tokens, product shell UI on a mocked backend | done |
 | M1 | Capture adapter, tile change detection, overlay window, headless pipeline CLI | done |
-| M2 | OCR engines behind one trait, UI Automation text source, source merge, layout analysis, language ID, corpus generator and CER benchmark | in progress |
-| M3 | Token protection, translation memory and cache, offline engine and pack manager, glossary, optional online engines with fallback | not started |
+| M2 | OCR engines behind one trait, UI Automation text source, source merge, layout analysis, language ID, corpus generator and CER benchmark | done |
+| M3 | Token protection, translation memory and cache, offline engine and pack manager, glossary, optional online engines with fallback | in progress |
 | M4 | Inpainting, font matching, text fitting, temporal stability, RTL and vertical text, visual regression suite | not started |
 | M5 | Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n, accessibility audit | not started |
 | M6 | Performance tuning, edge cases, chaos and soak runs, updater, installer | not started |
@@ -65,11 +65,13 @@ done); the `TextSource` abstraction with the UI Automation adapter and the sourc
 layout analysis — runs to lines to blocks, classified, aligned, with foreground and background
 measured per block (done); language identification — script from the code points, then orthographic
 cues, held steady per window (done); and the synthetic corpus generator with CER thresholds
-enforced in CI (crate complete on this branch: the thresholds are enforced by the workspace tests
-CI already runs, and the `lumen-corpus` harness exits on the gate verdict so a workflow step can
-hang on it; adding that step is an owner-only change under `docs/WORKFLOW.md` and is still open —
-until it lands, "enforced in CI" means the tests, not a dedicated job). Font weight and text
-effects per block are deliberately left to M4, where the renderer needs them.
+enforced in CI (done, PR #7 merged).
+
+M3 breaks down into: token protection and normalization (numbers, key hints, placeholders,
+tags, URLs, do-not-translate literals); translation memory and cache (LRU, stats, glossary
+version isolation); offline engine pack manager and catalog; per-application and global
+glossaries with word boundary matching; dialogue/LLM context sliding window; engine trait with
+scripted StubTranslationEngine; and online engine fallback with circuit breaker.
 
 ## Pipeline
 
