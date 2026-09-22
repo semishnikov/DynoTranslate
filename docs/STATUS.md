@@ -178,12 +178,14 @@ were the tail of `tauri info`, not the build error: GitHub keeps about ten error
 per step, and the reporter emitted `tauri info` first, so the error never left the runner.
 `gh run view --log` still dies with `EOF` on the log host.
 
-The failure that layout implies, and that the missing log is expected to name: the ephemeral
-key was exported as `TAURI_SIGNING_PRIVATE_KEY_PATH`. `tauri build` does not read that
-variable ([tauri#15028](https://github.com/tauri-apps/tauri/issues/15028)); it reads
-`TAURI_SIGNING_PRIVATE_KEY` as key contents or as a path. The workflow now sets that name,
-checks the Windows process can open the file before the long compile, and emits the build
-error from the build step itself. Not yet confirmed by a green bundle job.
+The ephemeral key was exported as `TAURI_SIGNING_PRIVATE_KEY_PATH`. `tauri build` does not
+read that variable ([tauri#15028](https://github.com/tauri-apps/tauri/issues/15028)); it reads
+`TAURI_SIGNING_PRIVATE_KEY` as key contents or as a path. The workflow now sets that name.
+Run 35760746298 confirmed the Windows process can open the file (the preflight step passed)
+and then failed in `Build the installer`. The annotations from that run are `thiserror`
+download lines: the reporter grepped for `error`, and that crate name filled the budget.
+The reporter now emits the last eight lines of the build log, which is where the bundler
+prints the failure. The bundle job is not green.
 
 Pushed in the same commits, not yet confirmed by CI: merge drops empty and zero-area runs;
 stability does not queue blank text; edge tests cover a 1×1 frame, padded strides, a sub-tile
