@@ -8,6 +8,9 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Done
 
+- **M3.** Token protection, translation memory and cache, offline pack manager, glossary and the
+  fallback engine stack. Green on all three jobs (CI run 35718597892) and merged as PR #8;
+  `main` is at `8fd881a`.
 - **M0.** Plan, architecture, ADRs 0001 and 0002, design tokens, and the product shell with four
   screens. Merged as PR #1.
 - **M1.** Rust workspace with four crates:
@@ -123,11 +126,13 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Next
 
-1. **Watch the consolidated M2 CI run.** Once green, update the unverified line above with the
-   run id.
-2. **Close superseded slice PRs #4 and #6** at the M2 merge, and remove the stale session branches
-   (`arena/01a0c4d6-*`, `arena/01a0c522-*`, `arena/01a0c52b-*`) so the repository has one linear
-   history.
+1. **Land M4** (this branch): the portable renderer with fitting, inpainting and bundled faces;
+   temporal stability; weight estimation in layout; the visual regression suite; ADR 0006.
+   CI green on all three jobs, then the pull request is marked ready for review.
+2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
+   and otherwise falls back to invariants. Generating the first golden needs a machine that can
+   run `cargo test` (the development environment cannot), so it is an owner step: render the
+   label scene, save it as that path, re-run.
 3. **The gate step in the workflow.** `lumen-corpus` exits on the gate verdict, but adding a step
    that runs it touches `.github/workflows/**`, which is owner-only under `docs/WORKFLOW.md`. Until
    it lands, the workspace tests CI already runs carry the thresholds.
@@ -136,17 +141,21 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
    The corpus font's remaining scripts (Greek, Han, kana, hangul, Arabic, Hebrew, Thai,
    Devanagari) join as skeleton additions when the languages that need them do.
 5. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-6. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
-   in M4.
+6. Text effects beyond weight (outline detection from the source pixels), which layout still
+   leaves alone.
+7. M5: Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n, accessibility.
 
 ## Known limitations
 
 - The harness reads the whole frame on every pass, so text that stopped moving is not forgotten.
-  Skipping work on unchanged tiles needs the previous pass to be reusable, which is M4.
+  Skipping work on unchanged tiles needs the previous pass to be reusable, which is still open.
 - Recognition of a plain PNG is still the region stand-in; no engine reads an image yet.
 - Language identification is orthography, not a trained classifier. It is exact for the script and
   for languages with letters of their own, and a leaning for the rest. Replacing the scoring with a
-  small model is a M3 concern, once translation gives something to compare against.
+  small model stays open; translation now gives something to compare against.
+- Font matching runs against the six bundled DejaVu faces only (ADR 0006). There is no family name
+  to match against from recognition, and system fonts are deliberately not consulted, so a game set
+  in a display face is rendered in DejaVu.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces
   it, as recorded in ADR 0003.
 - There is no `LICENSE` file in the repository. See the open decisions in `docs/PLAN.md`.

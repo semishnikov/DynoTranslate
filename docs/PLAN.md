@@ -54,8 +54,8 @@ contract and how to read a failing build are in `docs/WORKFLOW.md`.
 | M0 | Repository, plan, architecture, design tokens, product shell UI on a mocked backend | done |
 | M1 | Capture adapter, tile change detection, overlay window, headless pipeline CLI | done |
 | M2 | OCR engines behind one trait, UI Automation text source, source merge, layout analysis, language ID, corpus generator and CER benchmark | done |
-| M3 | Token protection, translation memory and cache, offline engine and pack manager, glossary, optional online engines with fallback | in progress |
-| M4 | Inpainting, font matching, text fitting, temporal stability, RTL and vertical text, visual regression suite | not started |
+| M3 | Token protection, translation memory and cache, offline engine and pack manager, glossary, optional online engines with fallback | done |
+| M4 | Inpainting, font matching, text fitting, temporal stability, RTL and vertical text, visual regression suite | in progress |
 | M5 | Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n, accessibility audit | not started |
 | M6 | Performance tuning, edge cases, chaos and soak runs, updater, installer | not started |
 | M7 | Release: signed installer, winget manifest, QA report, manual test plan | not started |
