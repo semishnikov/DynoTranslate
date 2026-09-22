@@ -188,8 +188,15 @@ minisign line, not the base64 public-key box `tauri signer generate` writes. Not
 shipped, so the key was rotated rather than repaired: public id `AF238AC5BE2A0E3C` is in
 `tauri.conf.json`, and the private half is in the session chat, not the repository. The
 previous chat handoff does not match this key and must not be stored. Pull-request builds
-still sign with an ephemeral pair and pass its public half via `--config`. The bundle job
-has not yet confirmed this.
+sign with an ephemeral pair and pass its public half via `--config`.
+
+Release run 35765741805 at `9c187b6` is green: `Build the installer` and `Upload the
+installer` both succeeded. The artifact is `installer-windows`, 7,886,330 bytes. It was not
+opened here — `gh run download` dies with `EOF` on the artifact host, the same way the log
+host does — so the file names inside the zip were not read back. The upload step's paths are
+the MSI and the NSIS setup. CI run 35765741916 on the same commit is green on Interface,
+Shell, Rust ubuntu and Rust windows. A later docs-only commit does not re-run the bundle
+job; this run is the proof.
 
 CI run 35760746307 is green on Interface, Shell, Rust ubuntu and Rust windows. That run
 includes the edge-case pass: merge drops empty and zero-area runs, stability does not queue
@@ -200,12 +207,12 @@ not a button; the first assertion said otherwise and was corrected before that r
 
 ## Next
 
-1. **Land M6** from `arena/01a0ca15-dynotranslate` (it supersedes PR #12; do not merge #12).
-   Merge after `bundle-windows` is green. The owner then stores two secrets: the private key
-   from this session's chat (id `AF238AC5BE2A0E3C`, empty password — not the earlier handoff),
-   and a fresh read-only `UPDATER_PAT`. One `v*` tag rehearsed into a draft release on a
-   desktop machine is the remaining owner step. If the bundle job fails again, the build
-   step's annotations are the last eight lines of the build log.
+1. **Land M6** from draft PR #13 (`arena/01a0ca15-dynotranslate`). Do not merge #12. The
+   installer job is green (release run 35765741805 at `9c187b6`). What remains is the owner:
+   store `TAURI_SIGNING_PRIVATE_KEY` (id `AF238AC5BE2A0E3C`, empty password, from this
+   session's chat — not the earlier handoff) and a fresh read-only `UPDATER_PAT`, then
+   rehearse one `v*` tag into a draft release on a desktop machine. That rehearsal is not
+   done. M7 does not start until this pull request is merged and that tag has been rehearsed.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
@@ -255,6 +262,7 @@ corpus gate; PRs #4 and #6 will be closed when it merges.
   translation is widely used by unrelated projects. Three candidates have to be checked against
   GitHub, winget and the Microsoft Store.
 - A Windows Authenticode certificate before the signed installer in M7. The updater minisign
-  key is a different key; its private half is the `TAURI_SIGNING_PRIVATE_KEY` secret, handed
-  over in chat, and is not this certificate.
+  key is a different key. Its public id is `AF238AC5BE2A0E3C`; the private half from this
+  session's chat is what `TAURI_SIGNING_PRIVATE_KEY` must hold. The earlier handoff does not
+  match and must not be stored.
 
