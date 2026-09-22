@@ -119,6 +119,15 @@ fn settle(config: &TrackerConfig, state: &mut State, guess: LanguageGuess) -> Sw
         state.streak = 0;
         return Switch::Kept;
     }
+    if state.current == Language::Unknown {
+        // Hysteresis protects an answer that is already known. With none, waiting three frames
+        // buys nothing and costs the first seconds of a session.
+        state.current = guess.language;
+        state.confidence = guess.confidence;
+        state.rival = guess.language;
+        state.streak = 0;
+        return Switch::Changed;
+    }
     if guess.language == state.current {
         state.confidence = guess.confidence;
         state.streak = 0;
@@ -212,6 +221,14 @@ mod tests {
         let mut tracker = Tracker::with_default_config();
         tracker.observe(1, guess(Language::German, 0.9));
         assert_eq!(tracker.observe(1, LanguageGuess::unknown()), Switch::Kept);
+        assert_eq!(tracker.language_of(1), Some(Language::German));
+    }
+
+    #[test]
+    fn a_window_with_no_language_takes_the_first_real_one_at_once() {
+        let mut tracker = Tracker::with_default_config();
+        tracker.observe(1, LanguageGuess::unknown());
+        assert_eq!(tracker.observe(1, guess(Language::German, 0.5)), Switch::Changed);
         assert_eq!(tracker.language_of(1), Some(Language::German));
     }
 

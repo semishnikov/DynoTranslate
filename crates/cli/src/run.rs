@@ -6,11 +6,12 @@ use std::time::Instant;
 use lumen_capture::synthetic::{Scene, SyntheticSource};
 use lumen_capture::CaptureSource;
 use lumen_core::{CaptureScheduler, ChangeDetector, Frame, Rect, SchedulerConfig};
+use lumen_language::{identify, Language, Tracker};
 use lumen_layout::{analyse, Block, LayoutConfig};
 use lumen_overlay::compositor::Compositor;
 use lumen_overlay::surface::{MemorySurface, OverlaySurface};
 use lumen_overlay::{OverlayBlock, OverlayLayout};
-use lumen_source::{merge, MergePolicy, ReadRequest, TextSource, TextTarget};
+use lumen_source::{merge, MergePolicy, ReadRequest, TextRun, TextSource, TextTarget};
 
 use crate::report::{percentile, BlockRecord, FrameRecord, Report, Totals};
 use crate::source::SceneTextSource;
@@ -65,6 +66,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     };
     let merge_policy = MergePolicy::default();
     let layout_config = LayoutConfig::default();
+    let mut tracker = Tracker::with_default_config();
 
     let mut records = Vec::with_capacity(frames.len());
     let mut static_frames = 0;
@@ -79,7 +81,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             static_frames += 1;
         }
 
-        let blocks = match &mut text_source {
+        let (blocks, language) = match &mut text_source {
             Some(source) => {
                 // The whole frame is read rather than only the regions that changed: text that
                 // stopped moving is still on screen and still needs its translation. Skipping
@@ -91,9 +93,11 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
                     regions: &[],
                 };
                 let runs = merge(source.read(&request)?, &merge_policy);
-                overlay_blocks(&analyse(frame, runs, &layout_config))
+                tracker.observe(target.id, identify(&joined(&runs)));
+                let language = tracker.language_of(target.id).unwrap_or(Language::Unknown);
+                (overlay_blocks(&analyse(frame, runs, &layout_config)), language)
             }
-            None => region_blocks(&change.regions),
+            None => (region_blocks(&change.regions), Language::Unknown),
         };
         let reported = describe_blocks(&blocks);
         let layout = OverlayLayout::new(options.style).with_blocks(blocks);
@@ -123,6 +127,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             changed_fraction: change.changed_fraction(),
             change_regions: change.regions,
             blocks: reported,
+            language,
             overlay_damage: composition.damage,
             presented_pixels,
             capture_rate_hz: scheduler.current_hz(),
@@ -144,6 +149,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
         height,
         tile_size: options.tile,
         style: options.style,
+        language: tracker.language_of(target.id).unwrap_or(Language::Unknown),
         totals: Totals {
             frames: records.len(),
             static_frames,
@@ -174,6 +180,12 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
         report.summarize(),
         report_path.display()
     ))
+}
+
+/// Everything a pass read, in one string, which is what language identification works on.
+fn joined(runs: &[TextRun]) -> String {
+    let parts: Vec<&str> = runs.iter().map(|run| run.text.as_str()).collect();
+    parts.join(" ")
 }
 
 /// What the compositor draws for a set of analysed blocks.
@@ -344,6 +356,21 @@ mod tests {
         let found: Vec<&str> = last.blocks.iter().map(|block| block.text.as_str()).collect();
         assert!(found.iter().any(|text| text.contains("Настройки")), "{found:?}");
         assert!(last.blocks.iter().all(|block| !block.text.is_empty()));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_scene_run_identifies_the_language_of_its_own_text() {
+        let dir = temp_dir("language");
+        execute(&options(&dir)).unwrap();
+        let text = fs::read_to_string(dir.join("report.json")).unwrap();
+        let report: Report = serde_json::from_str(&text).unwrap();
+
+        // The scene's first two frames are empty, so there is nothing to identify yet; from the
+        // frame the menu appears the text is Russian and the tracker settles on it at once.
+        assert_eq!(report.frames[0].language, Language::Unknown);
+        assert_eq!(report.frames[2].language, Language::Russian);
+        assert_eq!(report.language, Language::Russian);
         fs::remove_dir_all(&dir).unwrap();
     }
 

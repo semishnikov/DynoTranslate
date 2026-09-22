@@ -11,6 +11,8 @@ pub struct FrameRecord {
     /// The text the pipeline produced for this frame, so a report says what was translated and
     /// where, not only how fast.
     pub blocks: Vec<BlockRecord>,
+    /// The language the tracker had settled on by this frame.
+    pub language: lumen_language::Language,
     pub overlay_damage: Vec<Rect>,
     pub presented_pixels: u64,
     pub capture_rate_hz: f32,
@@ -47,6 +49,8 @@ pub struct Report {
     pub height: u32,
     pub tile_size: u32,
     pub style: lumen_overlay::OverlayStyle,
+    /// The language the run settled on, which is what translation would be working from.
+    pub language: lumen_language::Language,
     pub frames: Vec<FrameRecord>,
     pub totals: Totals,
 }
@@ -55,7 +59,7 @@ impl Report {
     pub fn summarize(&self) -> String {
         let totals = &self.totals;
         format!(
-            "{} · {}x{} · {} frames ({} static)\n\
+            "{} · {}x{} · {} frames ({} static) · source language {}\n\
              detect  p50 {} µs, max {} µs\n\
              compose p50 {} µs, max {} µs\n\
              presented {} of {} pixels ({:.1}% avoided)",
@@ -64,6 +68,7 @@ impl Report {
             self.height,
             totals.frames,
             totals.static_frames,
+            self.language.name(),
             totals.detect_micros_p50,
             totals.detect_micros_max,
             totals.compose_micros_p50,
