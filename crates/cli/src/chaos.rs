@@ -38,10 +38,15 @@ pub(crate) struct FaultPlan {
 
 impl Default for FaultPlan {
     fn default() -> Self {
+        // Sized against the reads a run actually performs. A 400-frame chaos scene holds
+        // about thirty blocks, each appearing and usually disappearing, so the run reads a
+        // few dozen times and every fault lands several times. Strides near or past the
+        // read count would leave faults unfired, and the integration test would assert
+        // against failures that never happened.
         Self {
-            every_read_error: 23,
-            every_target_lost: 67,
-            every_engine_error: 5,
+            every_read_error: 7,
+            every_target_lost: 13,
+            every_engine_error: 3,
         }
     }
 }

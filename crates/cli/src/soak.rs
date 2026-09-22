@@ -43,7 +43,10 @@ const PHRASES: &[&str] = &[
 /// A deterministic scene: `frames` frames worth of blocks with random lifetimes, so a different
 /// region of the screen changes on most frames and the pass reuse is exercised constantly.
 pub(crate) fn random_scene(width: u32, height: u32, frames: usize, rng: &mut SplitMix64) -> Scene {
-    let block_count = 6 + rng.below(10) as usize;
+    // The block count scales with the run length, so a longer run stays busy: each block
+    // appears once and usually disappears again, and the chaos fault plan is sized against
+    // the reads those changes cause. A fixed count would leave a long run mostly static.
+    let block_count = 6 + frames / 16;
     let mut blocks = Vec::with_capacity(block_count);
     for _ in 0..block_count {
         let block_width = 120 + rng.below(160) as u32;
