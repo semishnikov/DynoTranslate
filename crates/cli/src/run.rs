@@ -361,7 +361,7 @@ impl PassRunner {
         let language = self.final_language();
 
         let stage_started = Instant::now();
-        let analysed = analyse(frame, merged, &self.layout_config);
+        let analysed = analyse(frame, merged.clone(), &self.layout_config);
         let observations = observations_of(&analysed);
         self.stability.observe(&observations, &self.stability_config);
         translate_pending(&mut *self.engine, &mut self.stability, language);
