@@ -465,7 +465,11 @@ impl PassRunner {
     /// Every pipeline failure ends here: the overlay removes itself and the host application is
     /// left exactly as it was.
     fn fail_open_clear(&mut self, frame: &Frame) -> Result<(Vec<Rect>, u64), RunError> {
-        self.state = Some(PassState::empty());
+        // The pass state is dropped, not emptied: with no previous pass the static-frame
+        // skip cannot trigger, so the next pass re-reads the whole frame even when the
+        // pixels did not move (ADR 0007). An emptied state would report an empty overlay
+        // for a screen that still shows text until something else changed.
+        self.state = None;
         self.full_next_read = true;
         self.compositor.invalidate();
         let layout = OverlayLayout::new(self.style);
@@ -1121,7 +1125,7 @@ mod tests {
 
     struct FailingAfter {
         inner: SceneTextSource,
-        fail_from: usize,
+        fail_at: usize,
         reads: usize,
     }
 
@@ -1136,7 +1140,7 @@ mod tests {
 
         fn read(&mut self, request: &ReadRequest<'_>) -> Result<Vec<TextRun>, SourceError> {
             self.reads += 1;
-            if self.reads >= self.fail_from {
+            if self.reads == self.fail_at {
                 return Err(SourceError::TargetLost);
             }
             self.inner.read(request)
@@ -1158,7 +1162,7 @@ mod tests {
         let mut capture = SyntheticSource::new(scene.clone());
         let source = FailingAfter {
             inner: SceneTextSource::new(scene.clone()),
-            fail_from: 3,
+            fail_at: 3,
             reads: 0,
         };
         let boxed: Box<dyn TextSource> = Box::new(source);
