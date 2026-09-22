@@ -3,11 +3,11 @@
 //! A Russian Windows install usually still reads Latin letters with its own pack.
 
 use lumen_core::{Frame, Rect};
+use windows::core::HSTRING;
 use windows::Globalization::Language;
 use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
 use windows::Media::Ocr::OcrEngine as WinOcr;
 use windows::Storage::Streams::DataWriter;
-use windows::core::HSTRING;
 
 use crate::{OcrEngine, OcrError, Recognition};
 

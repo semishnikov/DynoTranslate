@@ -11,18 +11,25 @@ use lumen_core::{Frame, Rect};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, PrintWindow,
-    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC,
+    SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
 };
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, PRINT_WINDOW_FLAGS,
+    IsWindowVisible,
 };
 
 use crate::{CaptureError, CaptureSource, CaptureTarget};
+
+/// `PrintWindow` is not in the windows 0.58 binding this crate uses. Flag 2 is
+/// `PW_RENDERFULLCONTENT`, which asks for the window's own picture rather than the screen.
+#[link(name = "user32")]
+extern "system" {
+    fn PrintWindow(hwnd: HWND, hdc: HDC, flags: u32) -> BOOL;
+}
 
 /// Lists the windows a user could plausibly want translated: visible, not minimised, not cloaked by
 /// the shell, and large enough to hold readable text.
@@ -268,7 +275,7 @@ pub fn capture_window_screen(handle: isize) -> Result<(Frame, Rect), CaptureErro
 fn print_window(hwnd: HWND, width: u32, height: u32) -> Result<Frame, CaptureError> {
     let screen = ScreenContext::acquire()?;
     let memory = MemoryContext::compatible_with(&screen, width, height)?;
-    let printed = unsafe { PrintWindow(hwnd, memory.dc, PRINT_WINDOW_FLAGS(2)) };
+    let printed = unsafe { PrintWindow(hwnd, memory.dc, 2) };
     if !printed.as_bool() {
         return Err(CaptureError::Platform {
             operation: "PrintWindow",

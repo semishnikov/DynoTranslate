@@ -205,13 +205,13 @@ fn foreground_other_process() -> Option<isize> {
 }
 
 fn register_pause_hotkey() -> windows::core::Result<()> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_NOREPEAT, RegisterHotKey, VK_T};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, MOD_NOREPEAT, VK_T};
     unsafe { RegisterHotKey(None, 1, MOD_ALT | MOD_NOREPEAT, VK_T.0 as u32) }
 }
 
 fn init_winrt() {
-    use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
-    if let Err(error) = unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+    let mode = windows::Win32::System::WinRT::RO_INIT_MULTITHREADED;
+    if let Err(error) = unsafe { windows::Win32::System::WinRT::RoInitialize(mode) } {
         let _ = log(&format!("winrt init: {error}"));
     }
 }
