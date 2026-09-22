@@ -1,0 +1,11 @@
+[package]
+name = "lumen-language"
+description = "Which language the text on screen is written in, held steady per window"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
