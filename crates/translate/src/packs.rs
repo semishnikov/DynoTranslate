@@ -181,7 +181,8 @@ mod tests {
         let en_ru = manager.find_pack(Language::English, Language::Russian).unwrap();
         assert_eq!(en_ru.id, "opus-mt-en-ru-int8");
         assert_eq!(manager.status("opus-mt-en-ru-int8"), PackStatus::Available);
-        assert!(manager.installed_path(Language::English, Language::Russian).is_none());
+        let uninstalled = manager.installed_path(Language::English, Language::Russian);
+        assert!(uninstalled.is_none());
 
         manager.mark_installed("opus-mt-en-ru-int8", "/tmp/dynotranslate/models/en-ru");
         assert_eq!(

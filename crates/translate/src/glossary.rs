@@ -167,7 +167,8 @@ mod tests {
 
         let input = "Restore Stamina and HP! StaminaPotion does not match.";
         let output = glossary.apply(input);
-        assert_eq!(output, "Restore Выносливость and Очки здоровья! StaminaPotion does not match.");
+        let expected = "Restore Выносливость and Очки здоровья! StaminaPotion does not match.";
+        assert_eq!(output, expected);
     }
 
     #[test]

@@ -243,7 +243,8 @@ mod tests {
         let response = engine.translate(&request).unwrap();
         assert_eq!(response.items.len(), 3);
         assert_eq!(response.items[0].translated, "Новая игра");
-        assert_eq!(response.items[1].translated, "Нажмите [E] для взаимодействия");
+        let e_trans = "Нажмите [E] для взаимодействия";
+        assert_eq!(response.items[1].translated, e_trans);
         assert_eq!(response.items[2].translated, "[ru: Unknown Line 42]");
         assert_eq!(engine.call_count(), 1);
     }
