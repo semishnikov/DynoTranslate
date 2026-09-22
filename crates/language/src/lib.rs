@@ -271,7 +271,7 @@ impl Sample {
             .filter(|character| script_of(*character) != Script::Neutral)
             .collect();
         let tokens: Vec<String> = text
-            .split(|character| !character.is_alphanumeric())
+            .split(|character: char| !character.is_alphanumeric())
             .filter(|token| !token.is_empty())
             .map(|token| token.to_lowercase())
             .collect();

@@ -40,9 +40,7 @@ impl Script {
 /// character outside them is neutral, which is the honest answer and costs nothing downstream.
 pub fn script_of(character: char) -> Script {
     match character as u32 {
-        0x0041..=0x005A | 0x0061..=0x007A | 0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F => {
-            Script::Latin
-        }
+        0x0041..=0x005A | 0x0061..=0x007A | 0x00C0..=0x00D6 | 0x00D8..=0x00F6 | 0x00F8..=0x024F => Script::Latin,
         0x0370..=0x03FF | 0x1F00..=0x1FFF => Script::Greek,
         0x0400..=0x04FF | 0x0500..=0x052F => Script::Cyrillic,
         0x0590..=0x05FF => Script::Hebrew,
