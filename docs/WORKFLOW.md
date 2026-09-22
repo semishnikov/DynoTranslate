@@ -112,6 +112,11 @@ locally. Consequences to plan for:
 
 - Code is written against the published signatures of its dependencies and verified by CI. Read
   the dependency's real source before relying on an API; do not rely on memory.
+- The working copy can come back with its `HEAD` rewound to the branch point while the files on
+  disk are intact. Check `git rev-parse HEAD` against `git ls-remote origin <branch>` before
+  committing; if they disagree, `git fetch origin <branch> && git reset --mixed FETCH_HEAD` puts
+  `HEAD` back where the pushed history is and leaves the working copy alone. Committing before
+  checking would fork the branch and orphan everything already pushed.
 - Formatting has to be predicted, so these are the thresholds that matter, each one checked
   against code the workflow already accepted rather than assumed from the option names. With
   `max_width = 120` and the default heuristics:
