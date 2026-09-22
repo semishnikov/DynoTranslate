@@ -26,7 +26,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   #3; `main` is at `dea9a45`.
 - **M2, OCR slice.** `lumen-ocr`: the `OcrEngine` trait (`recognize` over regions, one entry per
   line), the scripted `StubEngine` double, and the character error rate benchmark with per-case
-  and mean scored reports. Green on both platforms (CI run 35632210937). Open as draft PR #4.
+  and mean scored reports. Green on both platforms (CI run 35632210937). Carried by the
+  consolidated M2 pull request; the slice PR #4 closes at the merge (ADR 0005).
 - **M2, text sources.** `lumen-source`:
   - `TextSource`, the trait both recognition and operating-system sources implement, with
     `ReadRequest` (frame, target window, regions of interest) and `TextRun` (text, bounds, source,
@@ -39,7 +40,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   - `UiAutomationSource`, the Windows adapter: initialises COM, walks the target window's
     accessibility tree, reads each element's text pattern line by line and its value pattern as a
     fallback, converts desktop coordinates into frame pixels and discards off-screen elements.
-  - 22 unit tests over the portable half. Open as draft PR #6.
+  - 22 unit tests over the portable half. Carried by the consolidated M2 pull request; the slice
+    PR #6 closes at the merge (ADR 0005).
 - **M2, layout analysis.** `lumen-layout`, the portable stage between the text sources and
   translation:
   - `group_lines` joins runs that share a baseline into rows, by vertical overlap and by a
@@ -117,30 +119,27 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   `EOF` on `productionresultssa2.blob.core.windows.net`), so the report numbers were not read back;
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
-- `lumen-corpus` has not been through CI. The GitHub token in this environment expired before the
-  branch could be pushed, so the crate is committed locally only: formatting, lint and tests are
-  authored against the same rules the accepted crates were verified under, but nothing here claims
-  the corpus builds until the workflow says so. This line gets replaced by a CI run reference the
-  moment the branch is pushed.
+- `lumen-corpus` has not been through CI yet: at the time of writing it is being pushed with the
+  consolidated pull request, and nothing here claims the corpus builds until the workflow says so.
+  This line gets replaced by a CI run reference the moment the branch is green.
 
 ## Next
 
-1. **Push this branch and let CI speak.** The corpus crate is complete locally; the first task
-   after the GitHub connection is restored is the push, a green `Rust` job, and replacing the
-   unverified line above with the run reference.
-2. **The gate step in the workflow.** `lumen-corpus` exits on the gate verdict, but adding a step
+1. **Watch the consolidated M2 CI run.** Once green, update the unverified line above with the
+   run id.
+2. **Close superseded slice PRs #4 and #6** at the M2 merge, and remove the stale session branches
+   (`arena/01a0c4d6-*`, `arena/01a0c522-*`, `arena/01a0c52b-*`) so the repository has one linear
+   history.
+3. **The gate step in the workflow.** `lumen-corpus` exits on the gate verdict, but adding a step
    that runs it touches `.github/workflows/**`, which is owner-only under `docs/WORKFLOW.md`. Until
    it lands, the workspace tests CI already runs carry the thresholds.
-3. **An engine that reads pixels.** The gate is measured with the scripted double; the first real
+4. **An engine that reads pixels.** The gate is measured with the scripted double; the first real
    engine is passed to `gate::score_recognition` in the double's place and nothing else changes.
    The corpus font's remaining scripts (Greek, Han, kana, hangul, Arabic, Hebrew, Thai,
    Devanagari) join as skeleton additions when the languages that need them do.
-4. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-5. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
+5. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
+6. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
    in M4.
-
-PR #6 stays a draft until the branch conflict below is decided; its build is green and the slices
-it carries are complete.
 
 ## Known limitations
 
@@ -154,22 +153,19 @@ it carries are complete.
   it, as recorded in ADR 0003.
 - There is no `LICENSE` file in the repository. See the open decisions in `docs/PLAN.md`.
 
-## Conflicting branches
+## Resolved branch conflict
 
-PR #5 (branch `arena/01a0c522-dynotranslate`) delivers the same M2 slice with a different
-decomposition: its text sources, merge, layout analysis and language identification live inside
-`lumen-ocr` (`source.rs`, `layout.rs`, `language.rs`, `uia.rs`) instead of a separate
-`lumen-source` crate, and it is open and marked ready for review. PR #4 and PR #5 overlap on the
-OCR slice, and PR #5 and PR #6 overlap on the text sources. Only one decomposition can merge; the
-other has to be rebased onto it or closed. This needs a decision before more work lands on either
-side.
+The M2 decomposition conflict between PR #5 (monolithic `lumen-ocr`) and PR #6 (separate crates
+for portable stages) was decided in ADR 0005 in favour of separate crates. PR #5 has been closed
+as superseded. M2 lands as a single pull request carrying the whole milestone from OCR through the
+corpus gate; PRs #4 and #6 will be closed when it merges.
 
 ## Needed from the owner
 
-- A decision on the branch conflict above: which decomposition is the one to build on.
 - A `LICENSE` choice. It is a legal decision, so it belongs to the owner; it blocks the first
   release, not the next milestone.
 - A product name. The code says Lumen, the repository says DynoTranslate, and "Lumen" alongside
   translation is widely used by unrelated projects. Three candidates have to be checked against
   GitHub, winget and the Microsoft Store.
 - A code-signing certificate before M6; not a blocker until then.
+
