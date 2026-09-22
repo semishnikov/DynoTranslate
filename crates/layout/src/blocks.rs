@@ -55,8 +55,20 @@ pub struct Block {
     pub foreground: [u8; 4],
     /// Estimated glyph height in pixels: the median of the block's line heights.
     pub font_size: u32,
+    /// Measured stroke weight, so the renderer can match bold interface text with a bold face.
+    pub weight: StrokeWeight,
     /// Lowest confidence among the block's runs.
     pub confidence: f32,
+}
+
+/// Stroke weight the renderer should draw with. Measured from how much of the block the ink
+/// covers rather than guessed from the font name, which recognition never reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StrokeWeight {
+    #[default]
+    Regular,
+    Bold,
 }
 
 impl Block {
@@ -182,6 +194,7 @@ fn build(frame: &Frame, lines: Vec<Line>, context: Context) -> Block {
     let (background, foreground) = sample_pair(frame, bounds);
     let alignment = alignment_of(bounds, context);
     let font_size = median_height(&lines);
+    let weight = estimate_weight(frame, bounds, background, foreground);
     let confidence = lines.iter().map(|line| line.confidence()).fold(1.0, f32::min);
     Block {
         kind: BlockKind::Label,
@@ -191,7 +204,43 @@ fn build(frame: &Frame, lines: Vec<Line>, context: Context) -> Block {
         background,
         foreground,
         font_size,
+        weight,
         confidence,
+    }
+}
+
+/// How much of the box the glyphs cover, which is what tells a bold face from a regular one
+/// without a font name. Below [`BOLD_COVERAGE`] the strokes are thin; above it they are not.
+const BOLD_COVERAGE: f32 = 0.22;
+
+fn estimate_weight(frame: &Frame, bounds: Rect, background: [u8; 4], foreground: [u8; 4]) -> StrokeWeight {
+    let Some(region) = bounds.clamp_to(&frame.bounds()) else {
+        return StrokeWeight::Regular;
+    };
+    if region.is_empty() {
+        return StrokeWeight::Regular;
+    }
+    let mut ink = 0_u32;
+    let mut total = 0_u32;
+    // Sample on a stride that keeps a full-screen block at a few thousand probes.
+    let step = ((region.width.max(region.height) / 64) as usize).max(1);
+    for y in (region.y..region.bottom()).step_by(step) {
+        for x in (region.x..region.right()).step_by(step) {
+            total += 1;
+            let pixel = frame.pixel(x as u32, y as u32);
+            if !crate::colour::near(pixel, background) && crate::colour::near(pixel, foreground) {
+                ink += 1;
+            }
+        }
+    }
+    if total == 0 {
+        return StrokeWeight::Regular;
+    }
+    let coverage = ink as f32 / total as f32;
+    if coverage >= BOLD_COVERAGE {
+        StrokeWeight::Bold
+    } else {
+        StrokeWeight::Regular
     }
 }
 

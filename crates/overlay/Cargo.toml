@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 lumen-core = { workspace = true }
+lumen-render = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 

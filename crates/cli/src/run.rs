@@ -7,11 +7,14 @@ use lumen_capture::synthetic::{Scene, SyntheticSource};
 use lumen_capture::CaptureSource;
 use lumen_core::{CaptureScheduler, ChangeDetector, Frame, Rect, SchedulerConfig};
 use lumen_language::{identify, Language, Tracker};
-use lumen_layout::{analyse, Block, LayoutConfig};
+use lumen_layout::{analyse, Alignment, Block, LayoutConfig, StrokeWeight};
 use lumen_overlay::compositor::Compositor;
 use lumen_overlay::surface::{MemorySurface, OverlaySurface};
-use lumen_overlay::{OverlayBlock, OverlayLayout};
+use lumen_overlay::{FontWeight, OverlayBlock, OverlayLayout, TextAlign};
+use lumen_render::writing_mode_of;
 use lumen_source::{merge, MergePolicy, ReadRequest, TextRun, TextSource, TextTarget};
+use lumen_stability::{Observation, StabilityConfig, StabilityTracker, StableBlock};
+use lumen_translate::{StubTranslationEngine, TranslateItem, TranslationEngine, TranslationRequest};
 
 use crate::report::{percentile, BlockRecord, FrameRecord, Report, Totals};
 use crate::source::SceneTextSource;
@@ -67,6 +70,9 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     let merge_policy = MergePolicy::default();
     let layout_config = LayoutConfig::default();
     let mut tracker = Tracker::with_default_config();
+    let stability_config = StabilityConfig::default();
+    let mut stability = StabilityTracker::new();
+    let mut engine = StubTranslationEngine::new();
 
     let mut records = Vec::with_capacity(frames.len());
     let mut static_frames = 0;
@@ -85,8 +91,8 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
             Some(source) => {
                 // The whole frame is read rather than only the regions that changed: text that
                 // stopped moving is still on screen and still needs its translation. Skipping
-                // work on unchanged tiles belongs to M4, where the previous pass can be reused
-                // instead of recomputed.
+                // work on unchanged tiles needs the previous pass to be reusable, which stays
+                // open after M4.
                 let request = ReadRequest {
                     frame,
                     target: &target,
@@ -95,7 +101,12 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
                 let runs = merge(source.read(&request)?, &merge_policy);
                 tracker.observe(target.id, identify(&joined(&runs)));
                 let language = tracker.language_of(target.id).unwrap_or(Language::Unknown);
-                (overlay_blocks(&analyse(frame, runs, &layout_config)), language)
+                let analysed = analyse(frame, runs, &layout_config);
+                let observations = observations_of(&analysed);
+                stability.observe(&observations, &stability_config);
+                translate_pending(&mut engine, &mut stability, language);
+                let stable = stability.tracks().to_vec();
+                (overlay_blocks_from_stable(&analysed, &stable), language)
             }
             None => (region_blocks(&change.regions), Language::Unknown),
         };
@@ -103,7 +114,7 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
         let layout = OverlayLayout::new(options.style).with_blocks(blocks);
 
         let started = Instant::now();
-        let composition = compositor.compose(width, height, &layout);
+        let composition = compositor.compose(frame, &layout);
         let compose_micros = started.elapsed().as_micros();
 
         surface.present(&composition.frame, &composition.damage)?;
@@ -188,14 +199,94 @@ fn joined(runs: &[TextRun]) -> String {
     parts.join(" ")
 }
 
-/// What the compositor draws for a set of analysed blocks.
-fn overlay_blocks(blocks: &[Block]) -> Vec<OverlayBlock> {
+/// What stability sees: one observation per analysed block.
+fn observations_of(blocks: &[Block]) -> Vec<Observation> {
     blocks
         .iter()
+        .map(|block| Observation {
+            rect: block.bounds,
+            text: block.text(),
+            confidence: block.confidence,
+        })
+        .collect()
+}
+
+/// Asks the engine for every stable block that still needs a translation and files the answer
+/// against the track, so the next frame reuses it instead of calling again.
+fn translate_pending(engine: &mut StubTranslationEngine, stability: &mut StabilityTracker, source_language: Language) {
+    let pending: Vec<String> = stability
+        .tracks()
+        .iter()
+        .filter(|block| block.needs_translation())
+        .map(|block| block.source_text.clone())
+        .collect();
+    if pending.is_empty() || source_language == Language::Unknown {
+        return;
+    }
+    let items: Vec<TranslateItem> = pending
+        .into_iter()
+        .enumerate()
+        .map(|(id, text)| TranslateItem { id, text, kind: None })
+        .collect();
+    let request = TranslationRequest {
+        items,
+        source_language,
+        target_language: Language::Russian,
+        context: None,
+        app_id: None,
+    };
+    if let Ok(response) = engine.translate(&request) {
+        for item in response.items {
+            stability.provide_translation(&item.source, item.translated);
+        }
+    }
+}
+
+/// What the compositor draws: the stable reading, its typography and its translation when the
+/// track has one. Geometry comes from the latest match, colours from the frame this pass.
+fn overlay_blocks_from_stable(analysed: &[Block], stable: &[StableBlock]) -> Vec<OverlayBlock> {
+    stable
+        .iter()
         .map(|block| {
-            OverlayBlock::new(block.bounds, block.text())
-                .with_colors(block.background, block.foreground)
+            let style = analysed
+                .iter()
+                .find(|candidate| candidate.bounds.iou(&block.rect) >= 0.3)
+                .or_else(|| analysed.first());
+            let (background, foreground, font_size, weight, align) = match style {
+                Some(source) => (
+                    source.background,
+                    source.foreground,
+                    source.font_size.max(10),
+                    source.weight,
+                    source.alignment,
+                ),
+                None => (
+                    [24, 22, 20, 255],
+                    [240, 238, 236, 255],
+                    16,
+                    StrokeWeight::Regular,
+                    Alignment::Left,
+                ),
+            };
+            let text = block.display_text().to_owned();
+            let writing = writing_mode_of(&text, block.rect.width, block.rect.height);
+            OverlayBlock::new(block.rect, text)
+                .with_colors(background, foreground)
                 .with_confidence(block.confidence)
+                .with_font(
+                    font_size,
+                    match weight {
+                        StrokeWeight::Regular => FontWeight::Regular,
+                        StrokeWeight::Bold => FontWeight::Bold,
+                    },
+                    false,
+                )
+                .with_align(match align {
+                    Alignment::Left => TextAlign::Left,
+                    Alignment::Center => TextAlign::Center,
+                    Alignment::Right => TextAlign::Right,
+                })
+                .with_writing(writing)
         })
         .collect()
 }
@@ -314,6 +405,17 @@ mod tests {
     use super::*;
     use lumen_overlay::OverlayStyle;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn options(dir: &Path) -> Options {
         Options {
             scene: Some("menu".to_owned()),
@@ -336,6 +438,7 @@ mod tests {
 
     #[test]
     fn a_scene_run_writes_a_report_for_every_frame() {
+        install_annotations();
         let dir = temp_dir("report");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -347,6 +450,7 @@ mod tests {
 
     #[test]
     fn a_scene_run_reports_the_text_the_pipeline_read() {
+        install_annotations();
         let dir = temp_dir("text");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -361,6 +465,7 @@ mod tests {
 
     #[test]
     fn a_scene_run_identifies_the_language_of_its_own_text() {
+        install_annotations();
         let dir = temp_dir("language");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -376,6 +481,7 @@ mod tests {
 
     #[test]
     fn damage_tracking_avoids_most_of_the_surface() {
+        install_annotations();
         let dir = temp_dir("savings");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -386,6 +492,7 @@ mod tests {
 
     #[test]
     fn an_unknown_scene_is_an_error() {
+        install_annotations();
         let dir = temp_dir("unknown");
         let mut options = options(&dir);
         options.scene = Some("dungeon".to_owned());
@@ -394,6 +501,7 @@ mod tests {
 
     #[test]
     fn overlay_images_round_trip_through_png() {
+        install_annotations();
         let dir = temp_dir("png");
         let mut options = options(&dir);
         options.write_images = true;

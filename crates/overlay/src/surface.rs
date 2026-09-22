@@ -179,14 +179,27 @@ mod tests {
     use super::*;
     use crate::compositor::{Compositor, OverlayBlock, OverlayLayout, OverlayStyle};
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     #[test]
     fn the_required_properties_are_all_set_together() {
+        install_annotations();
         assert!(SurfaceProperties::REQUIRED.satisfies_requirements());
         assert!(SurfaceProperties::REQUIRED.missing().is_empty());
     }
 
     #[test]
     fn a_missing_property_is_named() {
+        install_annotations();
         let properties = SurfaceProperties {
             excluded_from_capture: false,
             ..SurfaceProperties::REQUIRED
@@ -197,6 +210,7 @@ mod tests {
 
     #[test]
     fn presenting_a_mismatched_frame_is_rejected() {
+        install_annotations();
         let mut surface = MemorySurface::new(64, 64);
         let frame = Frame::filled(32, 32, [0, 0, 0, 0]).unwrap();
         let error = surface.present(&frame, &[Rect::new(0, 0, 32, 32)]).unwrap_err();
@@ -205,6 +219,7 @@ mod tests {
 
     #[test]
     fn only_damaged_pixels_are_copied() {
+        install_annotations();
         let mut surface = MemorySurface::new(64, 64);
         let mut frame = Frame::filled(64, 64, [9, 9, 9, 255]).unwrap();
         frame.fill_rect(Rect::new(0, 0, 8, 8), [1, 2, 3, 255]);
@@ -215,16 +230,18 @@ mod tests {
 
     #[test]
     fn a_static_layout_presents_fewer_pixels_after_the_first_frame() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let mut surface = MemorySurface::new(640, 480);
+        let frame = Frame::filled(640, 480, [30, 30, 30, 255]).unwrap();
         let layout = OverlayLayout::new(OverlayStyle::Seamless)
             .with_blocks(vec![OverlayBlock::new(Rect::new(20, 20, 200, 30), "Начать игру")]);
 
-        let first = compositor.compose(640, 480, &layout);
+        let first = compositor.compose(&frame, &layout);
         surface.present(&first.frame, &first.damage).unwrap();
         let first_cost = surface.presented_pixels();
 
-        let second = compositor.compose(640, 480, &layout);
+        let second = compositor.compose(&frame, &layout);
         surface.present(&second.frame, &second.damage).unwrap();
 
         assert!(surface.presented_pixels() - first_cost < first_cost / 10);
@@ -232,6 +249,7 @@ mod tests {
 
     #[test]
     fn clearing_removes_everything_the_overlay_drew() {
+        install_annotations();
         let mut surface = MemorySurface::new(32, 32);
         let frame = Frame::filled(32, 32, [7, 7, 7, 255]).unwrap();
         surface.present(&frame, &[Rect::new(0, 0, 32, 32)]).unwrap();
@@ -242,6 +260,7 @@ mod tests {
 
     #[test]
     fn resizing_replaces_the_surface_contents() {
+        install_annotations();
         let mut surface = MemorySurface::new(32, 32);
         surface.resize(64, 48).unwrap();
         assert_eq!(surface.size(), (64, 48));

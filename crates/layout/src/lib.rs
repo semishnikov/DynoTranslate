@@ -13,7 +13,7 @@ pub mod blocks;
 pub mod colour;
 pub mod lines;
 
-pub use blocks::{analyse, group_blocks, Alignment, Block, BlockKind};
+pub use blocks::{analyse, group_blocks, Alignment, Block, BlockKind, StrokeWeight};
 pub use colour::{luminance, modal_colour, near, sample_pair, TRANSPARENT};
 pub use lines::{group_lines, Line};
 

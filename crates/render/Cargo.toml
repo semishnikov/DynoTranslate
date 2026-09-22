@@ -1,0 +1,18 @@
+[package]
+name = "lumen-render"
+description = "Portable text fitting, font matching, glyph drawing and local inpainting for the overlay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+lumen-core = { workspace = true }
+cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
+fontdb = { version = "0.23", default-features = false, features = ["std"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+png = { workspace = true }
