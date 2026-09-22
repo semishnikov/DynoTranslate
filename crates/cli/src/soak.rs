@@ -179,7 +179,8 @@ mod tests {
         let second = random_scene(640, 480, 300, &mut b);
         assert_eq!(first.blocks.len(), second.blocks.len());
         for index in 0..300 {
-            assert_eq!(first.labels_at(index), second.labels_at(index), "frame {index} differs");
+            let (first_labels, second_labels) = (first.labels_at(index), second.labels_at(index));
+            assert_eq!(first_labels, second_labels, "frame {index} differs");
         }
     }
 

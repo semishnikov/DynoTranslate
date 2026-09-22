@@ -5,34 +5,16 @@
 //! compositor — exercised end to end without a platform and without a trained model.
 
 use lumen_capture::synthetic::Scene;
-use lumen_core::Rect;
 use lumen_source::{within_regions, ReadRequest, SourceError, SourceKind, TextRun, TextSource};
 
 pub struct SceneTextSource {
     scene: Scene,
     index: usize,
-    calls: usize,
-    last_regions: Vec<Rect>,
 }
 
 impl SceneTextSource {
     pub fn new(scene: Scene) -> Self {
-        Self {
-            scene,
-            index: 0,
-            calls: 0,
-            last_regions: Vec::new(),
-        }
-    }
-
-    /// How many times [`TextSource::read`] has run.
-    pub const fn calls(&self) -> usize {
-        self.calls
-    }
-
-    /// The regions the last read was restricted to. An empty list means the whole frame.
-    pub fn last_regions(&self) -> &[Rect] {
-        &self.last_regions
+        Self { scene, index: 0 }
     }
 }
 
@@ -56,8 +38,6 @@ impl TextSource for SceneTextSource {
             .into_iter()
             .map(|(bounds, text)| TextRun::new(text, bounds, SourceKind::Ocr, 1.0))
             .collect();
-        self.calls += 1;
-        self.last_regions = request.regions.to_vec();
         Ok(within_regions(runs, request.regions))
     }
 

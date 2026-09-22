@@ -203,23 +203,27 @@ impl PassRunner {
         self.last_composition.as_ref()
     }
 
+    #[cfg(test)]
     pub fn surface(&self) -> &MemorySurface {
         &self.surface
     }
 
     /// The regions the last read was restricted to. An empty list means the whole frame.
+    #[cfg(test)]
     pub fn last_read_regions(&self) -> &[Rect] {
         &self.last_read_regions
     }
 
     /// How many times a text source has been asked to read.
+    #[cfg(test)]
     pub const fn read_calls(&self) -> usize {
         self.read_calls
     }
 
     /// The language the tracker has settled on for this window.
     pub fn final_language(&self) -> Language {
-        self.tracker.language_of(self.target.id).unwrap_or(Language::Unknown)
+        let known = self.tracker.language_of(self.target.id);
+        known.unwrap_or(Language::Unknown)
     }
 
     /// Steps the text source to the next captured frame without reading. Called once per frame,
@@ -239,11 +243,11 @@ impl PassRunner {
         let detect_micros = detect_started.elapsed().as_micros();
         let next_delay = self.scheduler.next_delay(&change);
 
-        if self.config.reuse_previous && self.state.is_some() && !change.reset && change.is_static() {
-            // Nothing moved: the overlay stands, the host is untouched, and the whole pass costs
-            // the change detection itself. That is what "a static screen costs almost nothing"
-            // means in code.
-            let state = self.state.as_ref().expect("the skip condition checked for a previous pass");
+        // Nothing moved: the overlay stands, the host is untouched, and the whole pass costs
+        // the change detection itself. That is what "a static screen costs almost nothing"
+        // means in code.
+        let can_skip = self.config.reuse_previous && !change.reset && change.is_static();
+        if let (true, Some(state)) = (can_skip, self.state.as_ref()) {
             return Ok(PassOutcome {
                 change: change.clone(),
                 blocks: state.blocks.clone(),
@@ -295,7 +299,7 @@ impl PassRunner {
         self.last_read_regions = regions.clone();
         self.read_calls += 1;
         let read = {
-            let source = self.source.as_mut().expect("run_text_pass is called for a text source");
+            let source = self.source.as_mut().expect("run_text_pass needs a text source");
             source.read(&ReadRequest {
                 frame,
                 target: &self.target,
@@ -583,9 +587,9 @@ pub fn execute(options: &Options) -> Result<String, RunError> {
     })?;
 
     Ok(format!(
-        "{}\nreport written to {}",
+        "{}\nreport was written to {}",
         report.summarize(),
-        report_path.display()
+        report_path.display(),
     ))
 }
 
@@ -1075,9 +1079,12 @@ mod tests {
         assert!(read_area < whole_frame.area() / 2, "menu is a third of the screen");
     }
 
+    /// The per-frame readings, final overlay bytes and read count of a driven scene.
+    type DrivenScene = (Vec<(Vec<BlockRecord>, Language)>, Vec<u8>, usize);
+
     /// Drives the menu scene to the end and returns what each frame showed, what the overlay
     /// holds at the end, and how many reads happened.
-    fn drive_menu_scene(reuse_previous: bool) -> (Vec<(Vec<BlockRecord>, Language)>, Vec<u8>, usize) {
+    fn drive_menu_scene(reuse_previous: bool) -> DrivenScene {
         let scene = Scene::menu_appearing(640, 480);
         let mut capture = SyntheticSource::new(scene.clone());
         let config = PassConfig {
