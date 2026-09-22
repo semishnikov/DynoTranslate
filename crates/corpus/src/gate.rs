@@ -379,10 +379,14 @@ mod tests {
     #[test]
     fn preparation_keeps_the_ground_truth_intact() {
         let scenes: Vec<CorpusScene> = sample_specs().iter().map(composed).collect();
-        let expected: Vec<(String, Vec<String>)> = scenes
-            .iter()
-            .map(|scene| (scene.name.clone(), scene.lines.iter().map(|line| line.text.clone()).collect()))
-            .collect();
+        let mut expected = Vec::with_capacity(scenes.len());
+        for scene in &scenes {
+            let mut lines = Vec::new();
+            for line in &scene.lines {
+                lines.push(line.text.clone());
+            }
+            expected.push((scene.name.clone(), lines));
+        }
         let material = prepare(scenes);
 
         assert_eq!(material.cases.len(), 3);
