@@ -121,12 +121,10 @@ fn replace_word_boundary(text: &str, from: &str, to: &str, case_sensitive: bool)
 
     let mut result = String::with_capacity(text.len());
     let mut i = 0;
-    let bytes = text.as_bytes();
-    let text_len = bytes.len();
     let from_len = from.len();
 
-    while i < text_len {
-        let matches = if i + from_len <= text_len {
+    while i < text.len() {
+        let matches = if i + from_len <= text.len() && text.is_char_boundary(i + from_len) {
             let slice = &text[i..i + from_len];
             if case_sensitive {
                 slice == from
@@ -138,19 +136,10 @@ fn replace_word_boundary(text: &str, from: &str, to: &str, case_sensitive: bool)
         };
 
         if matches {
-            // Check left boundary
-            let left_ok = if i == 0 {
-                true
-            } else {
-                !bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_'
-            };
-            // Check right boundary
-            let right_ok = if i + from_len == text_len {
-                true
-            } else {
-                !bytes[i + from_len].is_ascii_alphanumeric() && bytes[i + from_len] != b'_'
-            };
-
+            let left = text[..i].chars().next_back();
+            let left_ok = left.map_or(true, |c| !c.is_alphanumeric() && c != '_');
+            let right = text[i + from_len..].chars().next();
+            let right_ok = right.map_or(true, |c| !c.is_alphanumeric() && c != '_');
             if left_ok && right_ok {
                 result.push_str(to);
                 i += from_len;
@@ -158,7 +147,6 @@ fn replace_word_boundary(text: &str, from: &str, to: &str, case_sensitive: bool)
             }
         }
 
-        // Copy character at i
         let ch = text[i..].chars().next().unwrap();
         result.push(ch);
         i += ch.len_utf8();

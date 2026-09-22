@@ -87,84 +87,66 @@ pub fn protect(text: &str, do_not_translate: &[&str]) -> (String, Vec<ProtectedT
     }
 
     // 2. URLs
-    let bytes = norm.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    while i < len {
-        if norm[i..].starts_with("https://") || norm[i..].starts_with("http://") {
-            let start = i;
-            while i < len && !bytes[i].is_ascii_whitespace() {
-                i += 1;
-            }
-            spans.push((start, i, TokenKind::Url));
-        } else {
-            i += 1;
+    for prefix in &["https://", "http://"] {
+        let mut search_from = 0;
+        while let Some(pos) = norm[search_from..].find(prefix) {
+            let start = search_from + pos;
+            let end = norm[start..]
+                .find(char::is_whitespace)
+                .map(|p| start + p)
+                .unwrap_or(norm.len());
+            spans.push((start, end, TokenKind::Url));
+            search_from = end;
         }
     }
 
-    // 3. XML/HTML and BBCode tags: <...> and [...]
-    i = 0;
-    while i < len {
-        if bytes[i] == b'<' {
-            let start = i;
-            if let Some(close) = norm[start..].find('>') {
-                let end = start + close + 1;
-                let inside = &norm[start + 1..end - 1];
-                if is_tag_content(inside) {
-                    spans.push((start, end, TokenKind::Tag));
-                    i = end;
-                    continue;
-                }
+    // 3. XML/HTML and BBCode tags: <...>
+    for (start, _) in norm.match_indices('<') {
+        if let Some(close) = norm[start..].find('>') {
+            let end = start + close + 1;
+            let inside = &norm[start + 1..end - 1];
+            if is_tag_content(inside) {
+                spans.push((start, end, TokenKind::Tag));
             }
         }
-        i += 1;
     }
 
-    // 4. Placeholders: {0}, {name}, %s, %d, %1$s, $VAR
-    i = 0;
-    while i < len {
-        if bytes[i] == b'{' {
-            let start = i;
-            if let Some(close) = norm[start..].find('}') {
-                let end = start + close + 1;
-                let inside = &norm[start + 1..end - 1];
-                if is_placeholder_identifier(inside) {
-                    spans.push((start, end, TokenKind::Placeholder));
-                    i = end;
-                    continue;
-                }
-            }
-        } else if bytes[i] == b'%' && i + 1 < len {
-            let start = i;
-            let mut j = i + 1;
-            while j < len && (bytes[j].is_ascii_digit() || bytes[j] == b'$' || bytes[j] == b'.') {
-                j += 1;
-            }
-            if j < len && matches!(bytes[j], b's' | b'd' | b'i' | b'f' | b'x' | b'X' | b'u') {
-                spans.push((start, j + 1, TokenKind::Placeholder));
-                i = j + 1;
-                continue;
+    // 4. Placeholders: {0}, {name}, %s, %d, %1$s
+    for (start, _) in norm.match_indices('{') {
+        if let Some(close) = norm[start..].find('}') {
+            let end = start + close + 1;
+            let inside = &norm[start + 1..end - 1];
+            if is_placeholder_identifier(inside) {
+                spans.push((start, end, TokenKind::Placeholder));
             }
         }
-        i += 1;
     }
 
-    // 5. Key hints: [E], [Space], [Ctrl+S], Ctrl+S, Alt+F4
-    i = 0;
-    while i < len {
-        if bytes[i] == b'[' {
-            let start = i;
-            if let Some(close) = norm[start..].find(']') {
-                let end = start + close + 1;
-                let inside = &norm[start + 1..end - 1];
-                if is_key_hint(inside) {
-                    spans.push((start, end, TokenKind::KeyHint));
-                    i = end;
-                    continue;
-                }
+    for (start, _) in norm.match_indices('%') {
+        let remainder = &norm[start + 1..];
+        let mut j = 0;
+        for ch in remainder.chars() {
+            if ch.is_ascii_digit() || ch == '$' || ch == '.' {
+                j += ch.len_utf8();
+            } else if matches!(ch, 's' | 'd' | 'i' | 'f' | 'x' | 'X' | 'u') {
+                j += ch.len_utf8();
+                spans.push((start, start + 1 + j, TokenKind::Placeholder));
+                break;
+            } else {
+                break;
             }
         }
-        i += 1;
+    }
+
+    // 5. Key hints: [E], [Space], [Ctrl+S]
+    for (start, _) in norm.match_indices('[') {
+        if let Some(close) = norm[start..].find(']') {
+            let end = start + close + 1;
+            let inside = &norm[start + 1..end - 1];
+            if is_key_hint(inside) {
+                spans.push((start, end, TokenKind::KeyHint));
+            }
+        }
     }
 
     // 6. Free-standing hotkey combos like "Ctrl+S" or "Alt+F4"
@@ -173,38 +155,52 @@ pub fn protect(text: &str, do_not_translate: &[&str]) -> (String, Vec<ProtectedT
         let lower = norm.to_ascii_lowercase();
         while let Some(pos) = lower[search_from..].find(combo) {
             let start = search_from + pos;
-            let mut end = start + combo.len();
-            while end < len && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'+') {
-                end += 1;
+            let combo_remainder = &norm[start + combo.len()..];
+            let mut extra = 0;
+            for ch in combo_remainder.chars() {
+                if ch.is_ascii_alphanumeric() || ch == '+' {
+                    extra += ch.len_utf8();
+                } else {
+                    break;
+                }
             }
-            if end > start + combo.len() {
+            if extra > 0 {
+                let end = start + combo.len() + extra;
                 spans.push((start, end, TokenKind::KeyHint));
+                search_from = end;
+            } else {
+                search_from = start + combo.len();
             }
-            search_from = end;
         }
     }
 
     // 7. Numbers: integers, decimals, percentages, currency prefixes
-    i = 0;
-    let is_num_char = |b: u8| b.is_ascii_digit() || matches!(b, b'.' | b',' | b'%' | b'$');
-    while i < len {
-        let ch = bytes[i];
-        let is_curr = matches!(ch, b'$' | b'#' | 0xC2 | 0xE2); // covers $, €, £
-        let is_sign = (ch == b'+' || ch == b'-') && i + 1 < len && bytes[i + 1].is_ascii_digit();
-        if ch.is_ascii_digit() || is_sign || is_curr {
-            let start = i;
-            let mut j = i;
-            while j < len && is_num_char(bytes[j]) {
-                j += 1;
+    let mut search_idx = 0;
+    while search_idx < norm.len() {
+        let remainder = &norm[search_idx..];
+        if let Some((offset, ch)) = remainder.char_indices().find(|(_, c)| {
+            c.is_ascii_digit() || *c == '$' || *c == '#' || *c == '€' || *c == '£'
+        }) {
+            let start = search_idx + offset;
+            let num_remainder = &norm[start..];
+            let mut num_len = 0;
+            for c in num_remainder.chars() {
+                if c.is_ascii_digit() || matches!(c, '.' | ',' | '%' | '$' | '#' | '€' | '£') {
+                    num_len += c.len_utf8();
+                } else {
+                    break;
+                }
             }
-            let slice = &norm[start..j];
+            let slice = &norm[start..start + num_len];
             if slice.chars().any(|c| c.is_ascii_digit()) {
-                spans.push((start, j, TokenKind::Number));
-                i = j;
-                continue;
+                spans.push((start, start + num_len, TokenKind::Number));
+                search_idx = start + num_len;
+            } else {
+                search_idx = start + ch.len_utf8();
             }
+        } else {
+            break;
         }
-        i += 1;
     }
 
     // Sort spans by start asc, length desc, and resolve overlaps (first wins)

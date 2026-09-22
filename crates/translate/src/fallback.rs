@@ -175,10 +175,7 @@ mod tests {
 
     struct FailingEngine;
     impl TranslationEngine for FailingEngine {
-        fn translate(
-            &mut self,
-            _req: &TranslationRequest,
-        ) -> Result<TranslationResponse, TranslationError> {
+        fn translate(&mut self, _req: &TranslationRequest) -> Result<TranslationResponse, TranslationError> {
             Err(TranslationError::Network("connection refused".to_owned()))
         }
         fn is_available(&self, _s: Language, _t: Language) -> bool {
