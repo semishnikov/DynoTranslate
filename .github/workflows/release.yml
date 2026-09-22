@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/release.yml'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bundle-windows:
+    name: Bundle (windows-latest)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install the toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install the frontend
+        working-directory: app
+        run: npm ci
+
+      - name: Refuse an unsigned release
+        if: github.ref_type == 'tag' && env.TAURI_SIGNING_PRIVATE_KEY == ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY secret to publish a release"
+          exit 1
+
+      - name: Release signing key
+        if: github.ref_type == 'tag'
+        run: echo "TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> "$GITHUB_ENV"
+
+      - name: Ephemeral signing key for a non-release build
+        if: github.ref_type != 'tag'
+        working-directory: app
+        run: |
+          npx tauri signer generate -w "$RUNNER_TEMP/lumen-ephemeral.key" -f --ci
+          echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP/lumen-ephemeral.key" >> "$GITHUB_ENV"
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('Lumen {0}', github.ref_name) || '' }}
+          releaseBody: See the assets to download and install this version.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: |
+            app/src-tauri/target/release/bundle/msi/*.msi
+            app/src-tauri/target/release/bundle/nsis/*-setup.exe
+          retention-days: 14

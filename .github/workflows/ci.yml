@@ -115,6 +115,51 @@ jobs:
             fi
           fi
 
+  shell:
+    name: Shell (windows-latest)
+    runs-on: windows-latest
+    # The shell is not a workspace member (Ubuntu CI has no WebKit/GTK), so it gets its
+    # own job on the platform it ships on, where WebView2 needs no system packages.
+    defaults:
+      run:
+        shell: bash
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check
+        run: cargo check --all-targets
+
+      - name: Report what failed
+        if: failure()
+        run: |
+          set +e
+          cargo fmt --check > shell-fmt.txt 2>&1
+          sed -n '1,40p' shell-fmt.txt | while IFS= read -r line; do
+            printf '::error title=shell-fmt::%s\n' "${line//'%'/'%25'}"
+          done
+          cargo clippy --all-targets --message-format short -- -D warnings > shell-clippy.txt 2>&1
+          grep -E "(^|: )(error|warning)" shell-clippy.txt > shell-diag.txt
+          if [ ! -s shell-diag.txt ]; then
+            tail -n 30 shell-clippy.txt > shell-diag.txt
+          fi
+          sed -n '1,40p' shell-diag.txt | while IFS= read -r line; do
+            printf '::error title=shell-clippy::%s\n' "${line//'%'/'%25'}"
+          done
+
   web:
     name: Interface
     runs-on: ubuntu-latest
