@@ -17,7 +17,9 @@ lumen-core = { workspace = true }
 lumen-language = { workspace = true }
 lumen-layout = { workspace = true }
 lumen-overlay = { workspace = true }
+lumen-render = { workspace = true }
 lumen-source = { workspace = true }
+lumen-stability = { workspace = true }
 lumen-translate = { workspace = true }
 png = { workspace = true }
 serde = { workspace = true }

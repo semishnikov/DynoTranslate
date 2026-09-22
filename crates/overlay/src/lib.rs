@@ -8,6 +8,7 @@ pub mod compositor;
 pub mod surface;
 
 pub use compositor::{Compositor, OverlayBlock, OverlayLayout, OverlayStyle};
+pub use lumen_render::{FontWeight, TextAlign, WritingMode};
 pub use surface::{OverlaySurface, SurfaceError, SurfaceProperties};
 
 #[cfg(windows)]

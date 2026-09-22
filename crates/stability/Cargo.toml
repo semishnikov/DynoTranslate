@@ -1,0 +1,12 @@
+[package]
+name = "lumen-stability"
+description = "Temporal stability: tracks blocks across frames and keeps translations steady under OCR jitter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+lumen-core = { workspace = true }
+serde = { workspace = true }

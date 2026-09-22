@@ -217,14 +217,15 @@ mod tests {
     fn a_static_layout_presents_fewer_pixels_after_the_first_frame() {
         let mut compositor = Compositor::new();
         let mut surface = MemorySurface::new(640, 480);
+        let frame = Frame::filled(640, 480, [30, 30, 30, 255]).unwrap();
         let layout = OverlayLayout::new(OverlayStyle::Seamless)
             .with_blocks(vec![OverlayBlock::new(Rect::new(20, 20, 200, 30), "Начать игру")]);
 
-        let first = compositor.compose(640, 480, &layout);
+        let first = compositor.compose(&frame, &layout);
         surface.present(&first.frame, &first.damage).unwrap();
         let first_cost = surface.presented_pixels();
 
-        let second = compositor.compose(640, 480, &layout);
+        let second = compositor.compose(&frame, &layout);
         surface.present(&second.frame, &second.damage).unwrap();
 
         assert!(surface.presented_pixels() - first_cost < first_cost / 10);
