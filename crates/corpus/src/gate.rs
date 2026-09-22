@@ -130,7 +130,9 @@ pub fn prepare(scenes: Vec<CorpusScene>) -> CorpusMaterial {
             language: scene.language,
             text: scene.transcript(),
         });
-        material.categories.push(categorise(scene.style, scene.background.kind()));
+        material
+            .categories
+            .push(categorise(scene.style, scene.background.kind()));
         material.languages.push(scene.language);
         material.cases.push(BenchmarkCase {
             name: scene.name,
