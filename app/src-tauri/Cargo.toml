@@ -24,3 +24,7 @@ serde_json = "1"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Its own workspace root: without this, Cargo discovers the repository workspace above
+# and refuses to build a package that is neither a member nor excluded.
+[workspace]
