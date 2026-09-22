@@ -1,12 +1,25 @@
 import { Card, Segmented, Slider, Toggle } from "../components/controls";
 import { localeOptions, useT } from "../i18n";
 import { useStore } from "../state/store";
+import { useUpdater } from "../state/updater";
 import type { Theme } from "../state/store";
 import type { LocaleCode } from "../i18n";
 
 export function Settings() {
   const t = useT();
   const state = useStore();
+  const updater = useUpdater();
+
+  const handleCheck = async () => {
+    const status = await updater.checkForUpdates();
+    if (status === "upToDate") {
+      state.notify(t("toast.upToDate"));
+    }
+  };
+
+  const progress = updater.total
+    ? `${Math.round((updater.downloaded / updater.total) * 100)}%`
+    : `${(updater.downloaded / 1048576).toFixed(1)} MB`;
 
   return (
     <div className="page">
@@ -182,14 +195,46 @@ export function Settings() {
           <div className="field__text">
             <span className="field__label">{t("app.name")} 1.0.0</span>
             <p className="field__hint">{t("settings.about.meta")}</p>
+            {updater.status === "available" && updater.version !== null && (
+              <p className="field__hint">{t("settings.about.available", { version: updater.version })}</p>
+            )}
+            {updater.status === "downloading" && (
+              <p className="field__hint">{t("settings.about.downloading", { progress })}</p>
+            )}
+            {updater.status === "ready" && <p className="field__hint">{t("settings.about.ready")}</p>}
+            {updater.status === "failed" && updater.error !== null && (
+              <p className="field__hint">{t("settings.about.failed", { error: updater.error })}</p>
+            )}
+            {updater.status === "unavailable" && (
+              <p className="field__hint">{t("settings.about.unavailable")}</p>
+            )}
           </div>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => state.notify(t("toast.upToDate"))}
-          >
-            {t("settings.about.check")}
-          </button>
+          {updater.status === "available" ? (
+            <button type="button" className="ghost-button" onClick={() => void updater.downloadAndInstall()}>
+              {t("settings.about.download")}
+            </button>
+          ) : updater.status === "ready" ? (
+            <button type="button" className="ghost-button" onClick={() => void updater.restartApp()}>
+              {t("settings.about.restart")}
+            </button>
+          ) : updater.status === "failed" ? (
+            <button type="button" className="ghost-button" onClick={() => void handleCheck()}>
+              {t("settings.about.retry")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={
+                updater.status === "checking" ||
+                updater.status === "downloading" ||
+                updater.status === "unavailable"
+              }
+              onClick={() => void handleCheck()}
+            >
+              {updater.status === "checking" ? t("settings.about.checking") : t("settings.about.check")}
+            </button>
+          )}
         </div>
       </Card>
     </div>

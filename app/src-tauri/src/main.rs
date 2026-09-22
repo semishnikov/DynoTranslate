@@ -66,8 +66,21 @@ fn set_shell_settings(
 }
 
 fn main() {
+    // The repository is private, so the updater authenticates its release downloads with
+    // a read-only token baked in at build time (release.yml sets UPDATER_PAT from a
+    // secret). Builds without one — pull requests from forks, local checks — simply ship
+    // an updater that cannot reach the private releases; see the UI error state.
+    let updater = tauri_plugin_updater::Builder::new();
+    let updater = match option_env!("UPDATER_PAT") {
+        Some(pat) => updater
+            .header("Authorization", format!("Bearer {pat}"))
+            .expect("updater auth header"),
+        None => updater,
+    };
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(updater.build())
+        .plugin(tauri_plugin_process::init())
         .manage(std::sync::Mutex::new(ShellSettings::default()))
         .invoke_handler(tauri::generate_handler![ping, get_shell_settings, set_shell_settings])
         .run(tauri::generate_context!())

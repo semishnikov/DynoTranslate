@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/release.yml'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bundle-windows:
+    name: Bundle (windows-latest)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install the toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install the frontend
+        working-directory: app
+        run: npm ci
+
+      - name: Refuse an unsigned release
+        if: github.ref_type == 'tag' && env.TAURI_SIGNING_PRIVATE_KEY == ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY secret to publish a release"
+          exit 1
+
+      - name: Release signing key
+        if: github.ref_type == 'tag'
+        run: echo "TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> "$GITHUB_ENV"
+
+      - name: Ephemeral signing key for a non-release build
+        if: github.ref_type != 'tag'
+        working-directory: app
+        run: |
+          npx tauri signer generate -w "$RUNNER_TEMP/lumen-ephemeral.key" -f --ci
+          echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP/lumen-ephemeral.key" >> "$GITHUB_ENV"
+
+      - name: Describe the Tauri setup
+        working-directory: app
+        run: npx tauri info > tauri-info.txt 2>&1; code=$?; cat tauri-info.txt; exit $code
+
+      # Non-release builds run the CLI directly so the full build output is available to
+      # the failure reporter below. Tagged releases go through tauri-action instead: it
+      # assembles the updater JSON and the draft release, and the owner rehearses that
+      # path on a machine where the action logs are readable.
+      - name: Build the installer
+        if: github.ref_type != 'tag'
+        working-directory: app
+        run: |
+          set +e
+          npx tauri build > tauri-build.txt 2>&1
+          code=$?
+          tail -n 30 tauri-build.txt
+          exit $code
+
+      - name: Build and release
+        if: github.ref_type == 'tag'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the binary at compile time (option_env!); the updater sends it as
+          # a Bearer token so release downloads work against this private repository.
+          UPDATER_PAT: ${{ secrets.UPDATER_PAT }}
+        with:
+          projectPath: app
+          tauriScript: npm run tauri
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('Lumen {0}', github.ref_name) || '' }}
+          releaseBody: See the assets to download and install this version.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: |
+            app/src-tauri/target/release/bundle/msi/*.msi
+            app/src-tauri/target/release/bundle/nsis/*-setup.exe
+          retention-days: 14
+
+      - name: Report what failed
+        if: failure()
+        working-directory: app
+        run: |
+          set +e
+          if [ -f tauri-info.txt ]; then
+            tail -n 10 tauri-info.txt | while IFS= read -r line; do
+              printf '::error title=tauri-info::%s\n' "${line//'%'/'%25'}"
+            done
+          fi
+          if [ -f tauri-build.txt ]; then
+            grep -iE "(^|: )(error|warning)" tauri-build.txt > build-diag.txt
+            tail -n 30 tauri-build.txt >> build-diag.txt
+            sed -n '1,40p' build-diag.txt | while IFS= read -r line; do
+              printf '::error title=tauri-build::%s\n' "${line//'%'/'%25'}"
+            done
+          fi

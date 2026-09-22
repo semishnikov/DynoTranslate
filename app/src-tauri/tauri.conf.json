@@ -29,13 +29,13 @@
       "id": "main",
       "iconPath": "icons/icon.png",
       "tooltip": "Lumen",
-      "menu": false,
       "title": "Lumen"
     }
   },
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
@@ -45,6 +45,16 @@
   "plugins": {
     "globalShortcut": {
       "enabled": true
+    },
+    "updater": {
+      "active": true,
+      "pubkey": "RWRC5/wBH4MkL5BYL/jtzbD+9jZdUnRjPGaXWn1XKxV0rRgbxYAsE1vZ3",
+      "endpoints": [
+        "https://github.com/semishnikov/DynoTranslate/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

@@ -8,6 +8,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Done
 
+- **M5.** Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n and the
+  accessibility audit. Merged as PR #10; `main` is at `6b5705b`.
 - **M4.** Portable renderer (fitting, inpainting, bundled faces), temporal stability, stroke-weight
   estimation, RTL/vertical writing modes, visual regression suite, ADR 0006, and the pipeline
   wired through stability + stub translation. Green on all three jobs (CI run 35728755276) and
@@ -128,11 +130,53 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
 
+## Done: M6 branch (performance, soak and chaos, edge cases)
+
+On branch `arena/01a0c968-dynotranslate` (PR #12), continued after the previous session hit its
+limit. Green on all three jobs (CI run 35746341895) and marked ready for review.
+
+What the continuation session did, oldest first:
+
+- Borrow-check fix (`merged.clone()`), then the formatting backlog the annotation cap hid
+  behind earlier diffs: all multi-argument calls over the 72-character cap broken one per line
+  with trailing commas, overlong chains and struct literals restructured.
+- Lint round: the static-skip check binds the previous pass with `if let` (tuple form, MSRV is
+  still 1.77, so no let-chains), the driven-scene tuple has an alias, test-only runner
+  instrumentation is `cfg(test)`, and the never-read source counters are gone.
+- Two compositor damage tests asserted the block rect exactly; paint covers the block plus its
+  ink overflow by design, so they now assert one region covering the block corners, like the
+  neighbouring damage tests.
+- CI failure reporting: every cli test binary installs the `test-panic` hook, the Test step tees
+  its output, and the failure reporter restates failed binaries/tests plus the release-run tail.
+- The budgets test compared a skipped frame against exact detection parity (missed by 7 µs on
+  a shared agent) and capped a changed pass at 500 ms (cold font work alone costs two seconds
+  in an unoptimized build). The relative ceiling is now twice the worst detection, the absolute
+  one five seconds, with the rationale in the comment.
+- The counting allocator delegates to `System` explicitly.
+- Formatting rules proven against green code this session: call/macro arguments stay whole up
+  to exactly 72 characters (inclusive) and break above it; a single argument uses the full
+  width; `fn` signatures join while the whole line fits 120; match-arm tuples stay vertical.
+
+In progress: the M6 updater and installer (scope `installer-too`, chosen by the owner).
+`src-tauri/` moved under `app/` (standard Tauri layout, so `frontendDist` resolves); the icon
+set is generated from a placeholder `icon-source.png` and committed; `release.yml` builds the
+MSI/NSIS installers on pull requests and `main` and turns `v*` tags into signed draft releases;
+the `shell` job checks the Tauri crate on `windows-latest`. The updater reads releases from this
+repository with a read-only token baked into the binary (owner choice over a public mirror or a
+public repo); the signing keypair was generated in-session, the public half is committed in
+`tauri.conf.json`, the private half travels to the owner in chat only. The Settings About card
+checks, downloads, installs and relaunches through a new updater store, verified locally with
+`tsc`, `vite build` and `oxlint` (all green). Still unverified: the new CI jobs (runs pending),
+the two repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `UPDATER_PAT` — owner steps), and the
+end-to-end update against a real tagged release, which needs a desktop machine.
+
 ## Next
 
-1. **Land M5** (PR #10): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
-   i18n and the accessibility audit. Interface + both Rust jobs green on CI run 35731085910;
-   PR marked ready for review.
+1. **Land M6** (PR #12): the performance/soak/chaos part is green on all three jobs (CI run
+   35746341895); the updater and installer joined the same branch. Merge after the new `shell`
+   and `bundle-windows` jobs go green, then the owner stores the two secrets
+   (`TAURI_SIGNING_PRIVATE_KEY` from the chat handoff, plus a fresh read-only `UPDATER_PAT`)
+   and rehearses one `v*` tag into a draft release on a desktop machine.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the

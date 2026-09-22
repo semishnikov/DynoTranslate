@@ -6,9 +6,9 @@ description = "Tauri host for the Lumen interface: tray, global shortcuts and th
 license = "Apache-2.0"
 publish = false
 
-# Deliberately not a workspace member: the CI toolchain has no WebKit/GTK packages and
-# cannot be changed without the workflows permission (docs/WORKFLOW.md). Build this on a
-# desktop machine with `cargo tauri build` from the repository root tooling.
+# Deliberately not a workspace member: the workspace CI runs on Ubuntu without WebKit/GTK
+# system packages. The shell is checked by the `shell` job on windows-latest instead, and
+# desktop builds run `npm run tauri build` from `app/`.
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -16,9 +16,15 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+# Its own workspace root: without this, Cargo discovers the repository workspace above
+# and refuses to build a package that is neither a member nor excluded.
+[workspace]

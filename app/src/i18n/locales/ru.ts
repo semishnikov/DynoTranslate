@@ -128,6 +128,15 @@ export const ru: Record<keyof typeof en, string> = {
   "settings.about": "О программе",
   "settings.about.meta": "Офлайн-движок перевода · пакеты 2026.03",
   "settings.about.check": "Проверить обновления",
+  "settings.about.checking": "Проверка…",
+  "settings.about.available": "Доступна версия {version}.",
+  "settings.about.download": "Скачать и установить",
+  "settings.about.downloading": "Скачивание… {progress}",
+  "settings.about.ready": "Обновление установлено. Перезапустите приложение.",
+  "settings.about.restart": "Перезапустить",
+  "settings.about.failed": "Ошибка обновления: {error}",
+  "settings.about.retry": "Повторить",
+  "settings.about.unavailable": "Обновления доступны в десктопном приложении.",
 
   "region.title": "Область",
   "region.blurb":
