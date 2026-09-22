@@ -36,8 +36,20 @@ impl SplitMix64 {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     #[test]
     fn the_same_seed_gives_the_same_sequence() {
+        install_annotations();
         let mut a = SplitMix64::new(7);
         let mut b = SplitMix64::new(7);
         for _ in 0..64 {
@@ -47,6 +59,7 @@ mod tests {
 
     #[test]
     fn different_seeds_give_different_sequences() {
+        install_annotations();
         let mut a = SplitMix64::new(7);
         let mut b = SplitMix64::new(8);
         assert_ne!(a.next_u64(), b.next_u64());
@@ -54,6 +67,7 @@ mod tests {
 
     #[test]
     fn below_never_reaches_the_limit() {
+        install_annotations();
         let mut rng = SplitMix64::new(1);
         for _ in 0..1000 {
             assert!(rng.below(10) < 10);

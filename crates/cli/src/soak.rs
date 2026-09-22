@@ -171,8 +171,20 @@ pub fn execute(frames: u32, options: &Options) -> Result<String, RunError> {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     #[test]
     fn the_scene_plan_is_deterministic_for_a_seed() {
+        install_annotations();
         let mut a = SplitMix64::new(7);
         let mut b = SplitMix64::new(7);
         let first = random_scene(640, 480, 300, &mut a);
@@ -186,6 +198,7 @@ mod tests {
 
     #[test]
     fn the_scene_blocks_stay_inside_the_frame() {
+        install_annotations();
         for seed in 0..8 {
             let mut rng = SplitMix64::new(seed);
             let scene = random_scene(640, 480, 400, &mut rng);

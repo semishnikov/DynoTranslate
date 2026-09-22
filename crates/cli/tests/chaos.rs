@@ -21,6 +21,7 @@ fn run_chaos(args: &[&str]) -> serde_json::Value {
 
 #[test]
 fn the_pipeline_fails_open_under_injected_faults() {
+    common::install_annotations();
     let report = run_chaos(&["--chaos", "400", "--seed", "42", "--width", "640", "--height", "480"]);
 
     assert_eq!(report["frames"], 400);
@@ -48,6 +49,7 @@ fn the_pipeline_fails_open_under_injected_faults() {
 
 #[test]
 fn the_chaos_run_is_deterministic_for_a_seed() {
+    common::install_annotations();
     let args: &[&str] = &["--chaos", "200", "--seed", "5", "--width", "480", "--height", "360"];
     let first = run_chaos(args);
     let second = run_chaos(args);

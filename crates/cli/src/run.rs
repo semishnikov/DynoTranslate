@@ -853,12 +853,7 @@ fn read_png(path: &Path) -> Result<Frame, RunError> {
 
     let mut pixels = Vec::with_capacity(info.width as usize * info.height as usize * 4);
     for chunk in buffer[..info.buffer_size()].chunks_exact(channels) {
-        pixels.extend_from_slice(&[
-            chunk[2],
-            chunk[1],
-            chunk[0],
-            if channels == 4 { chunk[3] } else { 255 },
-        ]);
+        pixels.extend_from_slice(&[chunk[2], chunk[1], chunk[0], if channels == 4 { chunk[3] } else { 255 }]);
     }
 
     Frame::packed(info.width, info.height, pixels).map_err(|error| RunError::Png {

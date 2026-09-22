@@ -202,12 +202,24 @@ fn parse_seed(value: &str, flag: &str) -> Result<u64, String> {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn parse_args(args: &[&str]) -> Result<Option<Options>, String> {
         parse(args.iter().map(|arg| (*arg).to_owned()))
     }
 
     #[test]
     fn defaults_to_the_menu_scene() {
+        install_annotations();
         let options = parse_args(&[]).unwrap().unwrap();
         assert_eq!(options.scene.as_deref(), Some("menu"));
         assert_eq!((options.width, options.height), (1280, 720));
@@ -216,21 +228,25 @@ mod tests {
 
     #[test]
     fn help_stops_before_running() {
+        install_annotations();
         assert!(parse_args(&["--help"]).unwrap().is_none());
     }
 
     #[test]
     fn unknown_arguments_are_rejected() {
+        install_annotations();
         assert!(parse_args(&["--turbo"]).is_err());
     }
 
     #[test]
     fn a_flag_without_its_value_is_rejected() {
+        install_annotations();
         assert!(parse_args(&["--width"]).is_err());
     }
 
     #[test]
     fn styles_and_speeds_are_parsed() {
+        install_annotations();
         let options = parse_args(&["--style", "plate", "--speed", "fast"]).unwrap().unwrap();
         assert_eq!(options.style, lumen_overlay::OverlayStyle::Plate);
         assert_eq!(options.speed, Responsiveness::Fast);
@@ -239,11 +255,13 @@ mod tests {
 
     #[test]
     fn zero_dimensions_are_rejected() {
+        install_annotations();
         assert!(parse_args(&["--width", "0"]).is_err());
     }
 
     #[test]
     fn the_soak_and_chaos_flags_carry_a_frame_count_and_a_seed() {
+        install_annotations();
         let options = parse_args(&["--soak", "600", "--seed", "7"]).unwrap().unwrap();
         assert_eq!(options.soak_frames, Some(600));
         assert_eq!(options.chaos_frames, None);

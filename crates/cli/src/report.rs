@@ -123,13 +123,26 @@ pub fn percentile(mut values: Vec<u128>, percent: f32) -> u128 {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     #[test]
     fn percentile_of_nothing_is_zero() {
+        install_annotations();
         assert_eq!(percentile(Vec::new(), 0.5), 0);
     }
 
     #[test]
     fn percentile_picks_the_expected_sample() {
+        install_annotations();
         let values = vec![10, 50, 20, 40, 30];
         assert_eq!(percentile(values.clone(), 0.5), 30);
         assert_eq!(percentile(values, 1.0), 50);

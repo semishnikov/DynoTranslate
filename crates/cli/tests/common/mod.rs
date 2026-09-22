@@ -26,3 +26,16 @@ pub fn pipeline_binary() -> PathBuf {
     );
     path
 }
+
+/// Routes panics to the Actions log as annotations, so a failing integration test
+/// names itself through the repository API the way the unit tests already do.
+pub fn install_annotations() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        std::panic::set_hook(Box::new(|info| {
+            let msg = info.to_string().replace('\n', " | ");
+            eprintln!("::error title=test-panic::{msg}");
+        }));
+    });
+}
