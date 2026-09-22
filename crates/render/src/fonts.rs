@@ -50,22 +50,22 @@ impl FontLibrary {
     /// Builds the library from the embedded faces. Infallible today; the error is kept so a
     /// future face that fails to parse reports which file was at fault.
     pub fn bundled() -> Result<Self, FontLibraryError> {
-        let sources = BUNDLED
-            .iter()
-            .map(|(name, bytes)| {
-                if bytes.is_empty() {
-                    return Err(FontLibraryError::MissingFont { name });
-                }
-                Ok(fontdb::Source::Binary(Arc::new(StaticFont(bytes))))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut system = FontSystem::new_with_fonts(sources);
+        // Only the embedded faces go into the database: `FontSystem::new_with_fonts` also scans
+        // the host's installed fonts, which would make glyph coverage — and any golden image —
+        // depend on the machine that happened to render it.
+        let mut db = fontdb::Database::new();
+        for (name, bytes) in BUNDLED {
+            if bytes.is_empty() {
+                return Err(FontLibraryError::MissingFont { name });
+            }
+            db.load_font_source(fontdb::Source::Binary(Arc::new(StaticFont(bytes))));
+        }
         // cosmic-text points the generic families at Open Sans and friends, which are not in
         // the bundle; retarget them so matching never depends on a font that is not there.
-        system.db_mut().set_sans_serif_family("DejaVu Sans");
-        system.db_mut().set_serif_family("DejaVu Serif");
-        system.db_mut().set_monospace_family("DejaVu Sans Mono");
+        db.set_sans_serif_family("DejaVu Sans");
+        db.set_serif_family("DejaVu Serif");
+        db.set_monospace_family("DejaVu Sans Mono");
+        let system = FontSystem::new_with_locale_and_db("en-US".to_owned(), db);
         Ok(Self { system })
     }
 

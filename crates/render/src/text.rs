@@ -314,13 +314,16 @@ fn cosmic_color(rgba: [u8; 4]) -> cosmic_text::Color {
 
 /// Rebuilds a straight-alpha pixel from what `with_pixels` reported.
 ///
-/// For a mask glyph the callback's colour keeps the base RGB and puts the coverage in alpha.
+/// For a mask glyph the callback's colour keeps the base RGB and puts the coverage in alpha;
+/// the draw's opacity rides along in `base[3]` and has to be multiplied back in, because the
+/// coverage alone would ignore it.
 fn mask_colour(pixel: cosmic_text::Color, base: [u8; 4]) -> [u8; 4] {
-    let coverage = pixel.a();
-    if coverage == 0 {
+    let coverage = u32::from(pixel.a());
+    if coverage == 0 || base[3] == 0 {
         return [0, 0, 0, 0];
     }
-    [base[0], base[1], base[2], coverage]
+    let alpha = (coverage * u32::from(base[3]) + 127) / 255;
+    [base[0], base[1], base[2], alpha as u8]
 }
 
 fn blend(dst: [u8; 4], src: [u8; 4]) -> [u8; 4] {
