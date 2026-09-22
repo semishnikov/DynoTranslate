@@ -48,7 +48,7 @@
     },
     "updater": {
       "active": true,
-      "pubkey": "RWRC5/wBH4MkL5BYL/jtzbD+9jZdUnRjPGaXWn1XKxV0rRgbxYAsE1vZ3",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFGMjM4QUM1QkUyQTBFM0MKUldROERpcSt4WW9qcjJ5TS9zUFBMaEFVTDRaMlNiOEdGbmVMZDd4aTc5NlFmUDlhbHpRNGhzUXMK",
       "endpoints": [
         "https://github.com/semishnikov/DynoTranslate/releases/latest/download/latest.json"
       ],

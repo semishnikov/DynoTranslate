@@ -181,27 +181,31 @@ per step, and the reporter emitted `tauri info` first, so the error never left t
 The ephemeral key was exported as `TAURI_SIGNING_PRIVATE_KEY_PATH`. `tauri build` does not
 read that variable ([tauri#15028](https://github.com/tauri-apps/tauri/issues/15028)); it reads
 `TAURI_SIGNING_PRIVATE_KEY` as key contents or as a path. The workflow now sets that name.
-Run 35760746298 confirmed the Windows process can open the file (the preflight step passed)
-and then failed in `Build the installer`. The annotations from that run are `thiserror`
-download lines: the reporter grepped for `error`, and that crate name filled the budget.
-The reporter now emits the last eight lines of the build log, which is where the bundler
-prints the failure. The bundle job is not green.
+Run 35760746298 confirmed the Windows process can open the file. Run 35763072186 then
+named the real failure, from the log tail: MSI and NSIS both finished, and signing aborted
+with `failed to decode pubkey … Invalid input length: 57`. The committed value was the raw
+minisign line, not the base64 public-key box `tauri signer generate` writes. Nothing has
+shipped, so the key was rotated rather than repaired: public id `AF238AC5BE2A0E3C` is in
+`tauri.conf.json`, and the private half is in the session chat, not the repository. The
+previous chat handoff does not match this key and must not be stored. Pull-request builds
+still sign with an ephemeral pair and pass its public half via `--config`. The bundle job
+has not yet confirmed this.
 
-Pushed in the same commits, not yet confirmed by CI: merge drops empty and zero-area runs;
-stability does not queue blank text; edge tests cover a 1×1 frame, padded strides, a sub-tile
-frame, a zero-height line, a one-pixel block, an empty fit, token overlap and a dropped
-sentinel, translation-memory normalisation and the capacity floor, and the circuit breaker
-reopening from half-open. Nothing here was executed locally. There is still no Rust toolchain
-in this environment.
+CI run 35760746307 is green on Interface, Shell, Rust ubuntu and Rust windows. That run
+includes the edge-case pass: merge drops empty and zero-area runs, stability does not queue
+blank text, and the new tests (1×1 frame, padded strides, sub-tile remainder, zero-height
+line, one-pixel block, empty fit, token overlap, translation-memory floor, breaker
+reopening from half-open) passed on both platforms. A one-pixel block classifies as a label,
+not a button; the first assertion said otherwise and was corrected before that run.
 
 ## Next
 
-1. **Land M6** from `arena/01a0ca15-dynotranslate` (it supersedes PR #12; do not merge #12, its
-   installer job is red for the reason above). Merge after `bundle-windows` is green on the new
-   pull request. Then the owner stores the two secrets (`TAURI_SIGNING_PRIVATE_KEY` from the
-   chat handoff, plus a fresh read-only `UPDATER_PAT`) and rehearses one `v*` tag into a draft
-   release on a desktop machine. If the bundle job fails again, the build step's annotations
-   are the error; read those before changing the workflow.
+1. **Land M6** from `arena/01a0ca15-dynotranslate` (it supersedes PR #12; do not merge #12).
+   Merge after `bundle-windows` is green. The owner then stores two secrets: the private key
+   from this session's chat (id `AF238AC5BE2A0E3C`, empty password — not the earlier handoff),
+   and a fresh read-only `UPDATER_PAT`. One `v*` tag rehearsed into a draft release on a
+   desktop machine is the remaining owner step. If the bundle job fails again, the build
+   step's annotations are the last eight lines of the build log.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
@@ -222,8 +226,9 @@ in this environment.
 
 ## Known limitations
 
-- The harness reads the whole frame on every pass, so text that stopped moving is not forgotten.
-  Skipping work on unchanged tiles needs the previous pass to be reusable, which is still open.
+- A static frame skips everything past change detection. A changed frame re-reads only the
+  changed regions and keeps the previous pass's runs for the rest. A lost target clears the
+  overlay and forces a full re-read on the next pass.
 - Recognition of a plain PNG is still the region stand-in; no engine reads an image yet.
 - Language identification is orthography, not a trained classifier. It is exact for the script and
   for languages with letters of their own, and a leaning for the rest. Replacing the scoring with a

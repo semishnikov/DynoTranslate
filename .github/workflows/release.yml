@@ -65,12 +65,20 @@ jobs:
           set -euo pipefail
           key_file="$RUNNER_TEMP/lumen-ephemeral.key"
           npx tauri signer generate -w "$key_file" -f --ci
+          # The committed pubkey is the release key. A pull-request build signs with
+          # this throwaway pair, so the binary must embed this public half or the
+          # bundler warns that updates signed here will be rejected at runtime.
+          pub=$(tr -d '\r\n' < "${key_file}.pub")
+          cfg="$RUNNER_TEMP/lumen-updater.json"
+          printf '{"plugins":{"updater":{"pubkey":"%s"}}}\n' "$pub" > "$cfg"
           # A mixed path has no backslashes for bash to mangle, and the Windows
           # bundler opens it as a normal path.
           if command -v cygpath >/dev/null 2>&1; then
             key_file="$(cygpath -m "$key_file")"
+            cfg="$(cygpath -m "$cfg")"
           fi
           echo "TAURI_SIGNING_PRIVATE_KEY=$key_file" >> "$GITHUB_ENV"
+          echo "LUMEN_UPDATER_CONFIG=$cfg" >> "$GITHUB_ENV"
           # --ci encrypts the key with an empty password. An unset password makes
           # the bundler prompt, which cannot succeed in this job.
           echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
@@ -103,7 +111,11 @@ jobs:
         working-directory: app
         run: |
           set +e
-          npx tauri build > tauri-build.txt 2>&1
+          if [ -n "${LUMEN_UPDATER_CONFIG:-}" ]; then
+            npx tauri build --config "$LUMEN_UPDATER_CONFIG" > tauri-build.txt 2>&1
+          else
+            npx tauri build > tauri-build.txt 2>&1
+          fi
           code=$?
           if [ "$code" != 0 ]; then
             # This step has its own annotation budget, which is the only log the

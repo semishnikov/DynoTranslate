@@ -45,13 +45,19 @@ npx tauri icon src-tauri/icon-source.png -o src-tauri/icons
 
 ## Signing updates
 
-Releases are signed with a minisign keypair whose public half lives in the
-`plugins.updater.pubkey` field of `tauri.conf.json`. The private half is stored as the
-`TAURI_SIGNING_PRIVATE_KEY` repository secret and never enters the repository. To rotate
-the keypair, run `npx tauri signer generate` from `app/`, replace the config field, and
-update the secret. Pull-request builds sign with an ephemeral key instead, which proves
-the signing path without touching the real one; a version tag without the secret fails
-loudly rather than publishing an unsigned release.
+Releases are signed with a minisign keypair. The public half in
+`plugins.updater.pubkey` is the base64 public-key box that `npx tauri signer generate`
+prints (it decodes to `untrusted comment: minisign public key: …`), not the raw `RW…`
+line. The bundler base64-decodes that field before it signs; a raw line fails with
+`Invalid input length`. The private half is stored as the `TAURI_SIGNING_PRIVATE_KEY`
+repository secret and never enters the repository. To rotate the keypair, run
+`npx tauri signer generate` from `app/`, replace the config field with the new `.pub`
+file, and update the secret. Pull-request builds generate an ephemeral pair and pass
+its public half with `--config`, so the installer they upload is signed by a key that
+matches the binary. A version tag without the secret fails loudly rather than
+publishing an unsigned release. The current public key id is `AF238AC5BE2A0E3C`. The
+private half handed over before this id is void: that config value was a raw line the
+bundler cannot decode, and nothing has shipped signed with it.
 
 `tauri build` reads that secret from `TAURI_SIGNING_PRIVATE_KEY` only — key contents, or
 a path to the key file. `TAURI_SIGNING_PRIVATE_KEY_PATH` is honoured by `tauri signer sign`
