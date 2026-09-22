@@ -86,10 +86,25 @@ jobs:
             else
               cargo test --workspace --all-targets > test.txt 2>&1
             fi
-            { grep -E "^test result: FAILED" test.txt; grep -E "^error" test.txt; grep -E "^    [a-zA-Z0-9_:]+$" test.txt; grep -E "FAILED$" test.txt; } > testdiag.txt
+            sed 's/\x1b\[[0-9;]*m//g' test.txt > testclean.txt
+            { grep -E "^test result: FAILED" testclean.txt; grep -E "^error" testclean.txt; grep -E "^    [a-zA-Z0-9_:]+$" testclean.txt; grep -E "FAILED$" testclean.txt; echo "--- tail ---"; tail -n 30 testclean.txt; } > testdiag.txt
             sed -n '1,40p' testdiag.txt | while IFS= read -r line; do
               printf '::error title=test-diag::%s\n' "${line//'%'/'%25'}"
             done
+            bt_needed=0
+            if grep -qE "^error: test failed" testclean.txt; then
+              if ! grep -qE "^    [a-zA-Z0-9_:]+$" testclean.txt; then
+                bt_needed=1
+              fi
+            fi
+            if [ "$bt_needed" = "1" ]; then
+              RUST_BACKTRACE=1 cargo test --workspace --all-targets > bt.txt 2>&1
+              sed 's/\x1b\[[0-9;]*m//g' bt.txt > btclean.txt
+              { grep -B2 -A30 "overflowed" btclean.txt; grep -B3 -A10 "^error: test failed" btclean.txt; echo "--- tail ---"; tail -n 15 btclean.txt; } > btdiag.txt
+              sed -n '1,40p' btdiag.txt | while IFS= read -r line; do
+                printf '::error title=backtrace::%s\n' "${line//'%'/'%25'}"
+              done
+            fi
             if [ ! -s testdiag.txt ]; then
               if ! cargo run --release --bin lumen-pipeline -- --scene menu --out-dir pipeline-out > pipeline.txt 2>&1; then
                 { grep -E "^error" pipeline.txt; tail -n 5 pipeline.txt; } > pipediag.txt

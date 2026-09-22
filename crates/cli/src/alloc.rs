@@ -7,7 +7,7 @@
 //! counter is installed for the whole binary; in the ordinary modes it is harmless, it only
 //! counts.
 
-use std::alloc::{GlobalAlloc, Layout};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct CountingAllocator {
@@ -49,7 +49,7 @@ impl CountingAllocator {
 // The counter is a bag of atomics: it never fails and never blocks.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let pointer = std::alloc::alloc(layout);
+        let pointer = System.alloc(layout);
         if !pointer.is_null() {
             self.allocations.fetch_add(1, Ordering::Relaxed);
             self.note_growth(layout.size());
@@ -60,7 +60,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.deallocations.fetch_add(1, Ordering::Relaxed);
         self.note_shrink(layout.size());
-        std::alloc::dealloc(ptr, layout);
+        System.dealloc(ptr, layout);
     }
 }
 
