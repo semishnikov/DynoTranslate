@@ -9,6 +9,7 @@ members = [
     "crates/source",
     "crates/layout",
     "crates/language",
+    "crates/corpus",
 ]
 
 [workspace.package]
@@ -26,6 +27,7 @@ lumen-ocr = { path = "crates/ocr" }
 lumen-source = { path = "crates/source" }
 lumen-layout = { path = "crates/layout" }
 lumen-language = { path = "crates/language" }
+lumen-corpus = { path = "crates/corpus" }
 png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -65,8 +65,11 @@ done); the `TextSource` abstraction with the UI Automation adapter and the sourc
 layout analysis — runs to lines to blocks, classified, aligned, with foreground and background
 measured per block (done); language identification — script from the code points, then orthographic
 cues, held steady per window (done); and the synthetic corpus generator with CER thresholds
-enforced in CI (not started). Font weight and text effects per block
-are deliberately left to M4, where the renderer needs them.
+enforced in CI (crate complete on this branch: the thresholds are enforced by the workspace tests
+CI already runs, and the `lumen-corpus` harness exits on the gate verdict so a workflow step can
+hang on it; adding that step is an owner-only change under `docs/WORKFLOW.md` and is still open —
+until it lands, "enforced in CI" means the tests, not a dedicated job). Font weight and text
+effects per block are deliberately left to M4, where the renderer needs them.
 
 ## Pipeline
 

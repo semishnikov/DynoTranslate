@@ -52,6 +52,11 @@ app/                 desktop interface (React, TypeScript, Vite)
 crates/core/         frame model, change detection, capture scheduling
 crates/capture/      capture sources behind one trait
 crates/overlay/      overlay compositor and presentation surfaces
+crates/ocr/          recognition trait, scripted double, CER benchmark
+crates/source/       text sources: UI Automation adapter, OCR bridge, merge
+crates/layout/       runs to lines to blocks, classified and measured
+crates/language/     script and orthographic language identification
+crates/corpus/       synthetic scene corpus, quality gate, identification scoring
 crates/cli/          headless pipeline harness
 docs/                plan, architecture, decision records, CI workflow
 ```
@@ -64,3 +69,13 @@ cargo run --bin lumen-pipeline -- --scene menu --out-dir pipeline-out
 
 It writes one overlay PNG per frame and a `report.json` with change regions, damage rectangles, per-stage timings and
 presentation cost.
+
+Generate and score the synthetic recognition corpus:
+
+```
+cargo run --release --bin lumen-corpus
+```
+
+It writes one PNG per scene, a `corpus.json` ground-truth manifest and a `report.json` holding the recognition gate
+(3 % clean, 8 % stylised, from `docs/PLAN.md`) and the language-identification score; the exit status is the gate
+verdict, so a CI step can hang on it.

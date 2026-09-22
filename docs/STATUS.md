@@ -76,6 +76,29 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   - 32 tests. The limits are stated where they belong: two languages that share an alphabet and a
     vocabulary get a low confidence rather than a confident guess, and Han on its own cannot be
     told from kanji-only Japanese.
+- **M2, corpus generator.** `lumen-corpus`: the synthetic recognition corpus, its gate and its
+  harness — 3658 lines, 66 tests, no platform code:
+  - `font` and `render`: every glyph is a stroke skeleton on an integer design grid — 139
+    skeletons plus 35 aliases covering the Latin and Cyrillic alphabets, digits and interface
+    punctuation — drawn as antialiased capsules in regular, bold and italic. The ground-truth box
+    of a line is measured from the pixels the draw actually changed rather than promised from
+    metrics, and a character without a skeleton is an error, never blank ink; Greek, Han, kana,
+    hangul, Arabic, Hebrew, Thai and Devanagari stay out of the corpus until they have skeletons.
+  - `phrases`: 87 interface phrases across 11 language packs, written in the menu vocabulary
+    identification scores against, every one checked against the font at test time.
+  - `scene` and `plan`: deterministic composition — seed in, pixels and truth out — over the full
+    product of language × style × background, with shrink-to-fit sizing, six contrast palettes and
+    solid, gradient and noise backgrounds; one plan seed fans out to distinct per-scene seeds.
+  - `gate`: every scene becomes a `lumen-ocr` benchmark case and the mean character error rate of
+    each category is held under the plan's ceilings (3 % clean UI text, 8 % stylised) by workspace
+    tests CI runs; every transcript is scored through `lumen-language::identify`, so the
+    identification scoring now measures against corpus material instead of hand-written phrases.
+  - `report` and the `lumen-corpus` binary: PNGs plus a `corpus.json` ground-truth manifest and a
+    `report.json` of both scores, exit status = gate verdict — the hook a CI step can use.
+  - The honest limit, stated in the crate docs as well: the engine under test is the corpus's own
+    scripted double — ground truth replayed through `StubEngine` — because no engine reads pixels
+    yet. What is pinned is the corpus, the scoring path and the thresholds; no real engine's
+    accuracy is claimed.
 
 ## Verification
 
@@ -94,14 +117,26 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   `EOF` on `productionresultssa2.blob.core.windows.net`), so the report numbers were not read back;
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
+- `lumen-corpus` has not been through CI. The GitHub token in this environment expired before the
+  branch could be pushed, so the crate is committed locally only: formatting, lint and tests are
+  authored against the same rules the accepted crates were verified under, but nothing here claims
+  the corpus builds until the workflow says so. This line gets replaced by a CI run reference the
+  moment the branch is pushed.
 
 ## Next
 
-1. **M2, corpus generator.** Synthetic scenes across fonts, scripts and backgrounds with CER
-   thresholds enforced in CI. Not started. The identification scoring wants the same corpus: right
-   now it is verified against synthetic phrases, not against real screens.
-2. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-3. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
+1. **Push this branch and let CI speak.** The corpus crate is complete locally; the first task
+   after the GitHub connection is restored is the push, a green `Rust` job, and replacing the
+   unverified line above with the run reference.
+2. **The gate step in the workflow.** `lumen-corpus` exits on the gate verdict, but adding a step
+   that runs it touches `.github/workflows/**`, which is owner-only under `docs/WORKFLOW.md`. Until
+   it lands, the workspace tests CI already runs carry the thresholds.
+3. **An engine that reads pixels.** The gate is measured with the scripted double; the first real
+   engine is passed to `gate::score_recognition` in the double's place and nothing else changes.
+   The corpus font's remaining scripts (Greek, Han, kana, hangul, Arabic, Hebrew, Thai,
+   Devanagari) join as skeleton additions when the languages that need them do.
+4. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
+5. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
    in M4.
 
 PR #6 stays a draft until the branch conflict below is decided; its build is green and the slices
