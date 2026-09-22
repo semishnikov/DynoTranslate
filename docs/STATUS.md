@@ -128,7 +128,7 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 1. **Land M4** (this branch): the portable renderer with fitting, inpainting and bundled faces;
    temporal stability; weight estimation in layout; the visual regression suite; ADR 0006.
-   CI green on all three jobs, then the pull request is marked ready for review.
+   CI green on all three jobs (run 35728755276); the pull request is marked ready for review.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
