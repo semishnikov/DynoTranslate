@@ -464,7 +464,7 @@ mod tests {
             transcript("uk", Language::Ukrainian, "Їжа та напої"),
             transcript("ru", Language::Russian, "Вы действительно хотите выйти?"),
             transcript("nl", Language::Dutch, "Het avontuur begint"),
-            transcript("it", Language::Italian, "Dov'è il salvataggio?"),
+            transcript("it", Language::Italian, "Salva e continua la partita"),
             transcript("en", Language::English, "The journey starts here"),
         ];
         let score = score_identification(&transcripts);

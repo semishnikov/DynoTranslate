@@ -83,7 +83,7 @@ const ITALIAN: LanguagePack = LanguagePack {
         "Vuoi davvero uscire?",
         "La battaglia inizia",
         "Il viaggio continua",
-        "Dov'è il salvataggio?",
+        "Salva e continua la partita",
         "Che il coraggio sia con te",
     ],
 };
