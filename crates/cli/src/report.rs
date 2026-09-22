@@ -18,11 +18,23 @@ pub struct FrameRecord {
     pub capture_rate_hz: f32,
     pub next_delay_ms: u64,
     pub detect_micros: u128,
+    pub read_micros: u128,
+    pub stage_micros: u128,
     pub compose_micros: u128,
+    /// The whole pass, wall time from frame in to present out.
+    pub pass_micros: u128,
+    /// True when the frame was static and nothing ran beyond change detection.
+    pub skipped: bool,
+    /// True when a changed frame recomposed nothing because the overlay content was unchanged.
+    pub compose_skipped: bool,
+    /// True when the target window was lost and the overlay removed itself.
+    pub cleared: bool,
+    /// True when a text source failed and the previous state was kept.
+    pub read_error: bool,
     pub overlay_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockRecord {
     pub rect: Rect,
     pub text: String,
@@ -32,6 +44,10 @@ pub struct BlockRecord {
 pub struct Totals {
     pub frames: usize,
     pub static_frames: usize,
+    /// Static frames that ran nothing beyond change detection.
+    pub skipped_frames: usize,
+    pub cleared_frames: usize,
+    pub read_error_frames: usize,
     pub presented_pixels: u64,
     pub full_surface_pixels: u64,
     /// Share of pixels avoided by presenting damage instead of whole frames.
@@ -40,6 +56,13 @@ pub struct Totals {
     pub detect_micros_max: u128,
     pub compose_micros_p50: u128,
     pub compose_micros_max: u128,
+    pub pass_micros_p50: u128,
+    pub pass_micros_p95: u128,
+    /// The cost of a skipped frame: change detection only.
+    pub static_pass_micros_p95: u128,
+    pub changed_pass_micros_p95: u128,
+    pub read_micros_p95: u128,
+    pub stage_micros_p95: u128,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,20 +82,27 @@ impl Report {
     pub fn summarize(&self) -> String {
         let totals = &self.totals;
         format!(
-            "{} · {}x{} · {} frames ({} static) · source language {}\n\
+            "{} · {}x{} · {} frames ({} static, {} skipped, {} cleared) · source language {}\n\
              detect  p50 {} µs, max {} µs\n\
              compose p50 {} µs, max {} µs\n\
+             pass    p50 {} µs, p95 {} µs (static p95 {} µs, changed p95 {} µs)\n\
              presented {} of {} pixels ({:.1}% avoided)",
             self.source,
             self.width,
             self.height,
             totals.frames,
             totals.static_frames,
+            totals.skipped_frames,
+            totals.cleared_frames,
             self.language.name(),
             totals.detect_micros_p50,
             totals.detect_micros_max,
             totals.compose_micros_p50,
             totals.compose_micros_max,
+            totals.pass_micros_p50,
+            totals.pass_micros_p95,
+            totals.static_pass_micros_p95,
+            totals.changed_pass_micros_p95,
             totals.presented_pixels,
             totals.full_surface_pixels,
             totals.presentation_savings * 100.0,
