@@ -155,6 +155,17 @@ fn fitted(size: f32, line_height: f32, at_floor: bool, preferred: f32) -> Fitted
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     /// A stand-in shaper: each character is `size * 0.5` wide, words never break below the
     /// floor, and a newline forces a new line. Enough to drive the algorithm without a font.
     fn fake_measure(text: &str, size: f32) -> (f32, u32) {
@@ -176,6 +187,7 @@ mod tests {
 
     #[test]
     fn text_that_already_fits_keeps_the_preferred_size() {
+        install_annotations();
         let spec = TextSpec::new("OK", 200, 40, 16);
         let fitted = fit_text(&spec, fake_measure).unwrap();
         assert_eq!(fitted.size, 16.0);
@@ -185,6 +197,7 @@ mod tests {
 
     #[test]
     fn a_long_line_shrinks_but_never_below_eighty_percent() {
+        install_annotations();
         // 40 chars * 0.5 * 16 = 320 wide against a 100-wide box.
         let text = "a".repeat(40);
         let spec = TextSpec::new(text, 100, 400, 16);
@@ -195,6 +208,7 @@ mod tests {
 
     #[test]
     fn an_impossible_box_stops_at_the_floor_instead_of_ellipsising() {
+        install_annotations();
         let text = "b".repeat(80);
         let spec = TextSpec::new(text, 20, 20, 32);
         let fitted = fit_text(&spec, fake_measure).unwrap();
@@ -205,6 +219,7 @@ mod tests {
 
     #[test]
     fn multiline_text_that_overflows_height_shrinks() {
+        install_annotations();
         let text = "line\nline\nline\nline\nline\nline";
         let spec = TextSpec::new(text, 200, 40, 16);
         let fitted = fit_text(&spec, fake_measure).unwrap();
@@ -213,6 +228,7 @@ mod tests {
 
     #[test]
     fn an_empty_box_is_an_error() {
+        install_annotations();
         let spec = TextSpec::new("x", 0, 10, 16);
         assert_eq!(
             fit_text(&spec, fake_measure),
@@ -222,6 +238,7 @@ mod tests {
 
     #[test]
     fn a_zero_font_size_is_an_error() {
+        install_annotations();
         let spec = TextSpec::new("x", 10, 10, 0);
         assert_eq!(fit_text(&spec, fake_measure), Err(FitError::ZeroFontSize { size: 0 }));
     }

@@ -221,6 +221,17 @@ impl StabilityTracker {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn observation(text: &str, x: i32, y: i32) -> Observation {
         Observation {
             rect: Rect::new(x, y, 120, 24),
@@ -231,6 +242,7 @@ mod tests {
 
     #[test]
     fn a_new_block_is_visible_at_once() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig::default();
         let blocks = tracker.observe(&[observation("Настройки", 10, 10)], &config);
@@ -241,6 +253,7 @@ mod tests {
 
     #[test]
     fn a_jittering_reading_does_not_replace_the_agreed_one_until_it_agrees() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig {
             agree_frames: 2,
@@ -262,6 +275,7 @@ mod tests {
 
     #[test]
     fn two_frames_of_agreement_replace_the_source_and_drop_the_stale_translation() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig {
             agree_frames: 2,
@@ -288,6 +302,7 @@ mod tests {
 
     #[test]
     fn a_translation_is_reused_while_the_source_stands() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig::default();
         tracker.observe(&[observation("New Game", 0, 0)], &config);
@@ -299,6 +314,7 @@ mod tests {
 
     #[test]
     fn numeric_only_text_is_never_marked_for_translation() {
+        install_annotations();
         assert!(is_numeric_only("87 / 100"));
         assert!(is_numeric_only("12,5%"));
         assert!(!is_numeric_only("Level 42"));
@@ -320,6 +336,7 @@ mod tests {
 
     #[test]
     fn a_block_that_leaves_the_screen_is_forgotten_after_the_miss_budget() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig {
             forget_misses: 2,
@@ -334,6 +351,7 @@ mod tests {
 
     #[test]
     fn two_boxes_that_do_not_overlap_stay_separate_tracks() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig::default();
         let blocks = tracker.observe(
@@ -352,6 +370,7 @@ mod tests {
 
     #[test]
     fn a_box_that_drifts_a_little_stays_on_the_same_track() {
+        install_annotations();
         let mut tracker = StabilityTracker::new();
         let config = StabilityConfig::default();
         tracker.observe(&[observation("Drift", 10, 10)], &config);

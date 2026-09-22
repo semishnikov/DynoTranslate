@@ -390,6 +390,17 @@ pub fn draw_fitted(
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn renderer() -> Renderer {
         Renderer::new().expect("bundled fonts")
     }
@@ -400,6 +411,7 @@ mod tests {
 
     #[test]
     fn drawing_text_puts_ink_in_the_box() {
+        install_annotations();
         let mut renderer = renderer();
         let mut frame = Frame::filled(200, 60, [0, 0, 0, 0]).expect("dims");
         let spec = TextSpec::new("Continue", 180, 40, 18);
@@ -410,6 +422,7 @@ mod tests {
 
     #[test]
     fn the_same_input_produces_the_same_bytes() {
+        install_annotations();
         let draw = || {
             let mut renderer = renderer();
             let mut frame = Frame::filled(160, 48, [0, 0, 0, 0]).expect("dims");
@@ -423,6 +436,7 @@ mod tests {
 
     #[test]
     fn fitting_never_reports_below_the_floor() {
+        install_annotations();
         let mut renderer = renderer();
         let spec = TextSpec::new(
             "This sentence is far too long for the tiny box it has been given to live in",
@@ -436,6 +450,7 @@ mod tests {
 
     #[test]
     fn drawing_does_not_ellipsise() {
+        install_annotations();
         let mut renderer = renderer();
         let text = "Extremely long label that cannot possibly fit";
         let mut frame = Frame::filled(60, 40, [0, 0, 0, 0]).expect("dims");
@@ -456,6 +471,7 @@ mod tests {
 
     #[test]
     fn bold_draws_more_ink_than_regular() {
+        install_annotations();
         let measure = |weight: FontWeight| {
             let mut renderer = renderer();
             let mut frame = Frame::filled(220, 48, [0, 0, 0, 0]).expect("dims");
@@ -471,6 +487,7 @@ mod tests {
 
     #[test]
     fn right_alignment_shifts_ink_to_the_right() {
+        install_annotations();
         let mut renderer = renderer();
         let mut left = Frame::filled(200, 40, [0, 0, 0, 0]).expect("dims");
         let mut right = Frame::filled(200, 40, [0, 0, 0, 0]).expect("dims");
@@ -504,6 +521,7 @@ mod tests {
 
     #[test]
     fn vertical_fitting_keeps_the_floor() {
+        install_annotations();
         let mut renderer = renderer();
         let spec = TextSpec::new("メニューを開く", 40, 150, 20).with_writing(WritingMode::Vertical);
         let ready = renderer.fit(&spec).expect("fit");
@@ -512,6 +530,7 @@ mod tests {
 
     #[test]
     fn an_outline_pass_runs_alongside_the_fill() {
+        install_annotations();
         let mut renderer = renderer();
         let mut without = Frame::filled(200, 48, [0, 0, 0, 0]).expect("dims");
         let mut with = Frame::filled(200, 48, [0, 0, 0, 0]).expect("dims");
@@ -531,6 +550,7 @@ mod tests {
 
     #[test]
     fn opacity_scales_the_ink() {
+        install_annotations();
         let mut renderer = renderer();
         let mut opaque = Frame::filled(200, 48, [0, 0, 0, 0]).expect("dims");
         let mut faded = Frame::filled(200, 48, [0, 0, 0, 0]).expect("dims");
@@ -544,6 +564,7 @@ mod tests {
 
     #[test]
     fn hebrew_shapes_without_panicking() {
+        install_annotations();
         let mut renderer = renderer();
         let mut frame = Frame::filled(160, 48, [0, 0, 0, 0]).expect("dims");
         let spec = TextSpec::new("שלום", 140, 36, 20);

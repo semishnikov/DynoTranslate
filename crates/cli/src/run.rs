@@ -405,6 +405,17 @@ mod tests {
     use super::*;
     use lumen_overlay::OverlayStyle;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn options(dir: &Path) -> Options {
         Options {
             scene: Some("menu".to_owned()),
@@ -427,6 +438,7 @@ mod tests {
 
     #[test]
     fn a_scene_run_writes_a_report_for_every_frame() {
+        install_annotations();
         let dir = temp_dir("report");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -438,6 +450,7 @@ mod tests {
 
     #[test]
     fn a_scene_run_reports_the_text_the_pipeline_read() {
+        install_annotations();
         let dir = temp_dir("text");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -452,6 +465,7 @@ mod tests {
 
     #[test]
     fn a_scene_run_identifies_the_language_of_its_own_text() {
+        install_annotations();
         let dir = temp_dir("language");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -467,6 +481,7 @@ mod tests {
 
     #[test]
     fn damage_tracking_avoids_most_of_the_surface() {
+        install_annotations();
         let dir = temp_dir("savings");
         execute(&options(&dir)).unwrap();
         let text = fs::read_to_string(dir.join("report.json")).unwrap();
@@ -477,6 +492,7 @@ mod tests {
 
     #[test]
     fn an_unknown_scene_is_an_error() {
+        install_annotations();
         let dir = temp_dir("unknown");
         let mut options = options(&dir);
         options.scene = Some("dungeon".to_owned());
@@ -485,6 +501,7 @@ mod tests {
 
     #[test]
     fn overlay_images_round_trip_through_png() {
+        install_annotations();
         let dir = temp_dir("png");
         let mut options = options(&dir);
         options.write_images = true;

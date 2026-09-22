@@ -12,6 +12,17 @@
 use lumen_core::{Frame, Rect};
 use lumen_render::{draw_fitted, inpaint, FontWeight, Renderer, TextAlign, TextSpec, WritingMode};
 
+fn install_annotations() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        std::panic::set_hook(Box::new(|info| {
+            let msg = info.to_string().replace('\n', " | ");
+            eprintln!("::error title=test-panic::{msg}");
+        }));
+    });
+}
+
 fn scene(width: u32, height: u32, colour: [u8; 4]) -> Frame {
     Frame::filled(width, height, colour).expect("dimensions")
 }
@@ -29,12 +40,14 @@ fn render_label(spec: &TextSpec) -> Frame {
 
 #[test]
 fn rendering_is_byte_identical_across_calls() {
+    install_annotations();
     let spec = TextSpec::new("Сохранить и выйти", 220, 40, 20).with_weight(FontWeight::Bold);
     assert_eq!(render_label(&spec).as_bytes(), render_label(&spec).as_bytes());
 }
 
 #[test]
 fn centred_and_left_text_differ_but_both_have_ink() {
+    install_annotations();
     let base = TextSpec::new("Centre me", 200, 36, 18);
     let left = render_label(&base);
     let right = render_label(&base.clone().with_align(TextAlign::Center));
@@ -45,6 +58,7 @@ fn centred_and_left_text_differ_but_both_have_ink() {
 
 #[test]
 fn a_tiny_box_never_reports_a_size_below_the_floor() {
+    install_annotations();
     let mut renderer = Renderer::new().expect("bundled fonts");
     let spec = TextSpec::new("Pack my box with five dozen liquor jugs", 64, 18, 32);
     let ready = renderer.fit(&spec).expect("fit");
@@ -58,6 +72,7 @@ fn a_tiny_box_never_reports_a_size_below_the_floor() {
 
 #[test]
 fn vertical_mode_produces_a_taller_ink_box_than_horizontal() {
+    install_annotations();
     let mut renderer = Renderer::new().expect("bundled fonts");
     let text = "Notes";
     let horizontal = renderer.fit(&TextSpec::new(text, 160, 40, 18)).expect("fit");
@@ -73,6 +88,7 @@ fn vertical_mode_produces_a_taller_ink_box_than_horizontal() {
 
 #[test]
 fn inpainting_a_flat_panel_reproduces_the_panel_exactly() {
+    install_annotations();
     let source = scene(64, 64, [18, 24, 32, 255]);
     let pixels = inpaint(&source, Rect::new(8, 8, 24, 12));
     assert_eq!(pixels.len(), 24 * 12);
@@ -81,6 +97,7 @@ fn inpainting_a_flat_panel_reproduces_the_panel_exactly() {
 
 #[test]
 fn inpainting_preserves_the_horizontal_ramp() {
+    install_annotations();
     let width = 80;
     let mut pixels = Vec::with_capacity(width as usize * 24 * 4);
     for _y in 0..24 {
@@ -102,6 +119,7 @@ fn inpainting_preserves_the_horizontal_ramp() {
 
 #[test]
 fn an_optional_golden_png_is_compared_when_present() {
+    install_annotations();
     let spec = TextSpec::new("Golden", 120, 32, 18);
     let actual = render_label(&spec);
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/label.png");

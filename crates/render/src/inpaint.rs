@@ -144,6 +144,17 @@ pub fn erase(source: &Frame, destination: &mut Frame, region: Rect) {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn frame_with_gradient(width: u32, height: u32) -> Frame {
         let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
         for _ in 0..height {
@@ -157,12 +168,14 @@ mod tests {
 
     #[test]
     fn a_region_outside_the_frame_yields_nothing() {
+        install_annotations();
         let frame = frame_with_gradient(16, 16);
         assert!(inpaint(&frame, Rect::new(100, 100, 4, 4)).is_empty());
     }
 
     #[test]
     fn a_flat_surface_stays_flat() {
+        install_annotations();
         let frame = Frame::filled(32, 32, [40, 40, 40, 255]).expect("dimensions");
         let pixels = inpaint(&frame, Rect::new(8, 8, 12, 8));
         assert_eq!(pixels.len(), 12 * 8);
@@ -171,6 +184,7 @@ mod tests {
 
     #[test]
     fn a_horizontal_gradient_is_reproduced_not_flattened() {
+        install_annotations();
         let frame = frame_with_gradient(64, 16);
         // In the middle rows the boundary left/right values drive the interior.
         let pixels = inpaint(&frame, Rect::new(16, 4, 16, 8));
@@ -184,6 +198,7 @@ mod tests {
 
     #[test]
     fn inpainting_is_deterministic() {
+        install_annotations();
         let frame = frame_with_gradient(48, 48);
         let region = Rect::new(10, 10, 20, 14);
         assert_eq!(inpaint(&frame, region), inpaint(&frame, region));
@@ -191,6 +206,7 @@ mod tests {
 
     #[test]
     fn erase_writes_the_reconstruction_into_the_destination() {
+        install_annotations();
         let source = Frame::filled(20, 20, [10, 20, 30, 255]).expect("dimensions");
         let mut destination = Frame::filled(20, 20, [0, 0, 0, 0]).expect("dimensions");
         erase(&source, &mut destination, Rect::new(4, 4, 6, 6));
@@ -200,6 +216,7 @@ mod tests {
 
     #[test]
     fn a_region_flush_with_the_edge_still_produces_pixels() {
+        install_annotations();
         let frame = frame_with_gradient(16, 16);
         let pixels = inpaint(&frame, Rect::new(0, 0, 8, 8));
         assert_eq!(pixels.len(), 64);

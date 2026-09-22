@@ -71,35 +71,52 @@ fn has_vertical_script(text: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     #[test]
     fn latin_and_cyrillic_are_left_to_right() {
+        install_annotations();
         assert_eq!(dominant_direction("Hello"), Direction::LeftToRight);
         assert_eq!(dominant_direction("Привет"), Direction::LeftToRight);
     }
 
     #[test]
     fn hebrew_and_arabic_are_right_to_left() {
+        install_annotations();
         assert_eq!(dominant_direction("שלום"), Direction::RightToLeft);
         assert_eq!(dominant_direction("الإعدادات"), Direction::RightToLeft);
     }
 
     #[test]
     fn digits_alone_do_not_flip_the_direction() {
+        install_annotations();
         assert_eq!(dominant_direction("42"), Direction::LeftToRight);
     }
 
     #[test]
     fn a_short_box_is_horizontal_even_with_japanese_text() {
+        install_annotations();
         assert_eq!(writing_mode_of("メニュー", 200, 40), WritingMode::Horizontal);
     }
 
     #[test]
     fn a_tall_box_of_japanese_text_is_vertical() {
+        install_annotations();
         assert_eq!(writing_mode_of("メニューを開く", 40, 200), WritingMode::Vertical);
     }
 
     #[test]
     fn a_tall_box_of_latin_text_stays_horizontal() {
+        install_annotations();
         assert_eq!(
             writing_mode_of("Settings\npanel\nnotes", 40, 200),
             WritingMode::Horizontal

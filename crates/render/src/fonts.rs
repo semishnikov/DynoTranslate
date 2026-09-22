@@ -93,14 +93,27 @@ mod tests {
     use super::*;
     use cosmic_text::{Attrs, Family, Shaping};
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     #[test]
     fn the_bundled_library_loads_every_face() {
+        install_annotations();
         let library = FontLibrary::bundled().expect("bundled fonts parse");
         assert_eq!(library.face_count(), 6);
     }
 
     #[test]
     fn the_generic_sans_family_resolves_to_a_bundled_face() {
+        install_annotations();
         let mut library = FontLibrary::bundled().expect("bundled fonts parse");
         let query = fontdb::Query {
             families: &[fontdb::Family::SansSerif],
@@ -113,6 +126,7 @@ mod tests {
 
     #[test]
     fn bold_resolves_to_the_bold_face() {
+        install_annotations();
         let mut library = FontLibrary::bundled().expect("bundled fonts parse");
         let query = fontdb::Query {
             families: &[fontdb::Family::SansSerif],
@@ -127,6 +141,7 @@ mod tests {
 
     #[test]
     fn shaping_cyrillic_produces_glyphs() {
+        install_annotations();
         let mut library = FontLibrary::bundled().expect("bundled fonts parse");
         let mut buffer = cosmic_text::Buffer::new(library.system(), cosmic_text::Metrics::new(16.0, 20.0));
         buffer.set_size(Some(200.0), Some(40.0));

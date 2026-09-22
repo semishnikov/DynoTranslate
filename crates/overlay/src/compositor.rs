@@ -346,6 +346,17 @@ mod tests {
     use super::*;
     use lumen_render::FontWeight;
 
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
+
     fn source(width: u32, height: u32) -> Frame {
         Frame::filled(width, height, [30, 30, 30, 255]).expect("dimensions")
     }
@@ -359,6 +370,7 @@ mod tests {
 
     #[test]
     fn untouched_pixels_stay_fully_transparent() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let composition = compositor.compose(&source(320, 240), &layout(OverlayStyle::Seamless));
         assert_eq!(composition.frame.pixel(300, 220), CLEAR);
@@ -366,6 +378,7 @@ mod tests {
 
     #[test]
     fn the_first_composition_damages_the_whole_surface() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let composition = compositor.compose(&source(320, 240), &layout(OverlayStyle::Seamless));
         assert_eq!(composition.damage, vec![Rect::new(0, 0, 320, 240)]);
@@ -373,6 +386,7 @@ mod tests {
 
     #[test]
     fn a_repeated_layout_damages_only_the_painted_regions() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let frame = source(320, 240);
         let layout = layout(OverlayStyle::Seamless);
@@ -387,6 +401,7 @@ mod tests {
 
     #[test]
     fn damage_covers_both_the_old_and_the_new_position() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let frame = source(320, 240);
         compositor.compose(
@@ -405,6 +420,7 @@ mod tests {
 
     #[test]
     fn invalidating_forces_a_full_present() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let frame = source(320, 240);
         let layout = layout(OverlayStyle::Seamless);
@@ -416,6 +432,7 @@ mod tests {
 
     #[test]
     fn empty_text_is_not_painted() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let composition = compositor.compose(
             &source(320, 240),
@@ -427,6 +444,7 @@ mod tests {
 
     #[test]
     fn low_confidence_blocks_are_plated_at_full_alpha() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let frame = source(320, 240);
         let seamless = compositor.compose(
@@ -442,6 +460,7 @@ mod tests {
 
     #[test]
     fn opacity_scales_what_is_drawn() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let frame = source(320, 240);
         let composition = compositor.compose(&frame, &layout(OverlayStyle::Plate).with_opacity(0.5));
@@ -452,6 +471,7 @@ mod tests {
 
     #[test]
     fn blocks_outside_the_surface_are_skipped() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let composition = compositor.compose(
             &source(100, 100),
@@ -464,6 +484,7 @@ mod tests {
 
     #[test]
     fn subtitles_draw_one_band_near_the_bottom() {
+        install_annotations();
         let mut compositor = Compositor::new();
         let frame = source(640, 480);
         let composition = compositor.compose(&frame, &layout(OverlayStyle::Subtitles));
@@ -479,6 +500,7 @@ mod tests {
 
     #[test]
     fn a_layout_round_trips_through_json() {
+        install_annotations();
         let layout = layout(OverlayStyle::Plate).with_opacity(0.8);
         let text = serde_json::to_string(&layout).unwrap();
         assert_eq!(serde_json::from_str::<OverlayLayout>(&text).unwrap(), layout);
@@ -486,6 +508,7 @@ mod tests {
 
     #[test]
     fn seamless_erasure_covers_the_source_box_with_reconstruction() {
+        install_annotations();
         let mut compositor = Compositor::new();
         // A gradient source: flat fills would be obvious.
         let width = 120;
@@ -510,6 +533,7 @@ mod tests {
 
     #[test]
     fn a_composition_is_deterministic() {
+        install_annotations();
         let compose = || {
             let mut compositor = Compositor::new();
             let frame = source(200, 80);
