@@ -182,7 +182,12 @@ pub fn packs() -> &'static [LanguagePack] {
 
 /// The phrases of one language, or nothing when the corpus does not cover it.
 pub fn phrases_for(language: Language) -> Option<&'static [&'static str]> {
-    packs().iter().find(|pack| pack.language == language).map(|pack| pack.phrases)
+    for pack in packs() {
+        if pack.language == language {
+            return Some(pack.phrases);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
