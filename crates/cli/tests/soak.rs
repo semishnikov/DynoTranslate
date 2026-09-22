@@ -4,10 +4,12 @@
 //! The binary runs in its own process, which is why the counting allocator's numbers say
 //! something about the pipeline and nothing about the test harness.
 
+mod common;
+
 use std::process::Command;
 
 fn run_pipeline(args: &[&str]) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_LUMEN_PIPELINE"))
+    let output = Command::new(common::pipeline_binary())
         .args(args)
         .output()
         .expect("the pipeline binary is built by cargo");
@@ -48,8 +50,9 @@ fn a_soak_run_keeps_memory_flat() {
 
 #[test]
 fn the_soak_is_deterministic_for_a_seed() {
-    let first = run_pipeline(&["--soak", "120", "--seed", "3", "--width", "480", "--height", "360"]);
-    let second = run_pipeline(&["--soak", "120", "--seed", "3", "--width", "480", "--height", "360"]);
+    let args: &[&str] = &["--soak", "120", "--seed", "3", "--width", "480", "--height", "360"];
+    let first = run_pipeline(args);
+    let second = run_pipeline(args);
 
     assert_eq!(first["static_frames"], second["static_frames"]);
     assert_eq!(first["changed_frames"], second["changed_frames"]);

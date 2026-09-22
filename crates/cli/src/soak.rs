@@ -48,16 +48,12 @@ pub(crate) fn random_scene(width: u32, height: u32, frames: usize, rng: &mut Spl
     for _ in 0..block_count {
         let block_width = 120 + rng.below(160) as u32;
         let block_height = 24 + rng.below(16) as u32;
-        let x = 16 + rng.below(width.saturating_sub(block_width + 16).max(1)) as i32;
-        let y = 16 + rng.below(height.saturating_sub(block_height + 16).max(1)) as i32;
+        let x = 16 + rng.below(width.saturating_sub(block_width + 16).max(1) as u64) as i32;
+        let y = 16 + rng.below(height.saturating_sub(block_height + 16).max(1) as u64) as i32;
         let text = PHRASES[rng.below(PHRASES.len() as u64) as usize].to_owned();
         let appears_at = rng.below((frames as u64) * 7 / 10 + 1) as usize;
-        let mut block = SceneBlock::new(
-            Rect::new(x, y, block_width, block_height),
-            [214, 210, 204, 255],
-            text,
-        )
-        .from_frame(appears_at);
+        let mut block = SceneBlock::new(Rect::new(x, y, block_width, block_height), [214, 210, 204, 255], text)
+            .from_frame(appears_at);
         if rng.below(10) <= 5 {
             let span = frames as u64 - appears_at as u64;
             if span > 4 {
@@ -180,11 +176,7 @@ mod tests {
         let second = random_scene(640, 480, 300, &mut b);
         assert_eq!(first.blocks.len(), second.blocks.len());
         for index in 0..300 {
-            assert_eq!(
-                first.labels_at(index),
-                second.labels_at(index),
-                "frame {index} differs"
-            );
+            assert_eq!(first.labels_at(index), second.labels_at(index), "frame {index} differs");
         }
     }
 
