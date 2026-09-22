@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn protects_placeholders_and_tags() {
-        let (masked, tokens) = protect("Hello <color=red>{player_name}</color>, level %d!", &[]);
+        let (_masked, tokens) = protect("Hello <color=red>{player_name}</color>, level %d!", &[]);
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens[0].kind, TokenKind::Tag);
         assert_eq!(tokens[0].original, "<color=red>");
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn protects_explicit_do_not_translate_literals() {
-        let (masked, tokens) = protect("Visit DynoTranslate at https://example.com", &["DynoTranslate"]);
+        let (_masked, tokens) = protect("Visit DynoTranslate at https://example.com", &["DynoTranslate"]);
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].original, "DynoTranslate");
         assert_eq!(tokens[0].kind, TokenKind::Literal);

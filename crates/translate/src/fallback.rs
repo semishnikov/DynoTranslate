@@ -136,6 +136,11 @@ impl<P: TranslationEngine, S: TranslationEngine> FallbackEngine<P, S> {
     pub fn circuit_breaker(&self) -> &CircuitBreaker {
         &self.breaker
     }
+
+    /// Mutable reference to the breaker for manual transitions or tests.
+    pub fn circuit_breaker_mut(&mut self) -> &mut CircuitBreaker {
+        &mut self.breaker
+    }
 }
 
 impl<P: TranslationEngine, S: TranslationEngine> TranslationEngine for FallbackEngine<P, S> {
@@ -217,6 +222,6 @@ mod tests {
 
         // Advance past cooldown -> enters HalfOpen
         fallback.advance_time(5_001);
-        assert_eq!(fallback.circuit_breaker().allow_request(5_001), true);
+        assert_eq!(fallback.circuit_breaker_mut().allow_request(5_001), true);
     }
 }

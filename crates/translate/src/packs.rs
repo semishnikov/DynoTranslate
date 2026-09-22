@@ -160,7 +160,7 @@ pub fn standard_catalog() -> Vec<ModelPackInfo> {
         },
         ModelPackInfo {
             id: "opus-mt-zh-en-int8".to_owned(),
-            source: Language::Chinese,
+            source: Language::ChineseSimplified,
             target: Language::English,
             size_bytes: 54_100_000,
             sha256: "e493e802a4b1792f6937402a5e8c071b4092e34b148e652a97042c16f859a1c6".to_owned(),

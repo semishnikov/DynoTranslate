@@ -138,7 +138,9 @@ impl StubTranslationEngine {
         dict.insert("Attack".to_owned(), "Атака".to_owned());
         dict.insert("Defense".to_owned(), "Защита".to_owned());
         dict.insert("Score".to_owned(), "Счёт".to_owned());
-        dict.insert("Press [E] to interact".to_owned(), "Нажмите [E] для взаимодействия".to_owned());
+        let e_hint = "Press [E] to interact".to_owned();
+        let e_hint_ru = "Нажмите [E] для взаимодействия".to_owned();
+        dict.insert(e_hint, e_hint_ru);
 
         Self {
             dictionary: dict,
@@ -178,7 +180,7 @@ impl TranslationEngine for StubTranslationEngine {
                 target.clone()
             } else {
                 // Algorithmic mock translation: preserve words and wrap in target tag
-                format!("[{}: {}]", req.target_language.alpha2(), masked)
+                format!("[{}: {}]", req.target_language.code(), masked)
             };
 
             let final_text = restore(&translated_raw, &tokens);
