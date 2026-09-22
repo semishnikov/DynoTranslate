@@ -152,7 +152,7 @@ mod tests {
 
     fn frame_with_gradient(width: u32, height: u32) -> Frame {
         let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
-        for y in 0..height {
+        for _ in 0..height {
             for x in 0..width {
                 let shade = ((x * 255) / width.max(1)) as u8;
                 pixels.extend_from_slice(&[shade, shade, shade, 255]);

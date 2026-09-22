@@ -226,11 +226,7 @@ fn translate_pending(engine: &mut StubTranslationEngine, stability: &mut Stabili
     let items: Vec<TranslateItem> = pending
         .into_iter()
         .enumerate()
-        .map(|(id, text)| TranslateItem {
-            id,
-            text,
-            kind: None,
-        })
+        .map(|(id, text)| TranslateItem { id, text, kind: None })
         .collect();
     let request = TranslationRequest {
         items,
