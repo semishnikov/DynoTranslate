@@ -71,7 +71,10 @@ pub struct CorpusScene {
 impl CorpusScene {
     /// The whole scene as one passage, the form language identification sees.
     pub fn transcript(&self) -> String {
-        let texts: Vec<&str> = self.lines.iter().map(|line| line.text.as_str()).collect();
+        let mut texts = Vec::with_capacity(self.lines.len());
+        for line in &self.lines {
+            texts.push(line.text.as_str());
+        }
         texts.join(" ")
     }
 }
@@ -81,9 +84,13 @@ pub fn compose(spec: &SceneSpec) -> Result<CorpusScene, CorpusError> {
     if spec.lines == 0 {
         return Err(CorpusError::BadArgument("a scene needs at least one line".to_owned()));
     }
-    let phrases = phrases_for(spec.language).ok_or_else(|| {
-        CorpusError::BadArgument(format!("the corpus has no phrase pack for {:?}", spec.language))
-    })?;
+    let phrases = match phrases_for(spec.language) {
+        Some(list) => list,
+        None => {
+            let message = format!("the corpus has no phrase pack for {:?}", spec.language);
+            return Err(CorpusError::BadArgument(message));
+        }
+    };
 
     let mut rng = Rng::new(spec.seed);
     let (foreground, panel) = PALETTES[rng.pick(PALETTES.len() as u32) as usize];
@@ -92,7 +99,10 @@ pub fn compose(spec: &SceneSpec) -> Result<CorpusScene, CorpusError> {
     let mut order: Vec<usize> = (0..phrases.len()).collect();
     rng.shuffle(&mut order);
     let wanted = spec.lines.min(phrases.len());
-    let chosen: Vec<&str> = order.iter().take(wanted).map(|index| phrases[*index]).collect();
+    let mut chosen = Vec::with_capacity(wanted);
+    for index in order.into_iter().take(wanted) {
+        chosen.push(phrases[index]);
+    }
 
     let margin_x = (spec.width / 16).max(16);
     let margin_y = (spec.height / 16).max(16);
