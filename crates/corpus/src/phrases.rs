@@ -172,17 +172,7 @@ const UKRAINIAN: LanguagePack = LanguagePack {
 };
 
 static PACKS: &[LanguagePack] = &[
-    ENGLISH,
-    GERMAN,
-    FRENCH,
-    SPANISH,
-    ITALIAN,
-    PORTUGUESE,
-    POLISH,
-    CZECH,
-    DUTCH,
-    RUSSIAN,
-    UKRAINIAN,
+    ENGLISH, GERMAN, FRENCH, SPANISH, ITALIAN, PORTUGUESE, POLISH, CZECH, DUTCH, RUSSIAN, UKRAINIAN,
 ];
 
 /// Every language pack the corpus draws from, in a fixed order.
