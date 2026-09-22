@@ -37,7 +37,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --all-targets
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --all-targets 2>&1 | tee test-step.txt
 
       - name: Run the headless pipeline
         run: cargo run --release --bin lumen-pipeline -- --scene menu --out-dir pipeline-out
@@ -78,14 +81,18 @@ jobs:
             test_needed=0
           fi
           if [ "$test_needed" = "1" ]; then
-            cargo test --workspace --all-targets > test.txt 2>&1
+            if [ -s test-step.txt ]; then
+              cp test-step.txt test.txt
+            else
+              cargo test --workspace --all-targets > test.txt 2>&1
+            fi
             { grep -E "^test result: FAILED" test.txt; grep -E "^error" test.txt; grep -E "^    [a-zA-Z0-9_:]+$" test.txt; grep -E "FAILED$" test.txt; } > testdiag.txt
             sed -n '1,40p' testdiag.txt | while IFS= read -r line; do
               printf '::error title=test-diag::%s\n' "${line//'%'/'%25'}"
             done
             if [ ! -s testdiag.txt ]; then
               if ! cargo run --release --bin lumen-pipeline -- --scene menu --out-dir pipeline-out > pipeline.txt 2>&1; then
-                tail -n 20 pipeline.txt > pipediag.txt
+                { grep -E "^error" pipeline.txt; tail -n 5 pipeline.txt; } > pipediag.txt
                 sed -n '1,40p' pipediag.txt | while IFS= read -r line; do
                   printf '::error title=pipeline-diag::%s\n' "${line//'%'/'%25'}"
                 done
