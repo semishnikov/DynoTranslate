@@ -152,7 +152,7 @@ pub fn compose(spec: &SceneSpec) -> Result<CorpusScene, CorpusError> {
 }
 
 fn widest_line(phrases: &[&str], text_style: &TextStyle) -> Result<f32, CorpusError> {
-    let mut widest = 0.0;
+    let mut widest: f32 = 0.0;
     for phrase in phrases {
         widest = widest.max(render::measure(phrase, text_style)?.width);
     }

@@ -35,10 +35,19 @@ impl BackgroundKind {
 /// A concrete background, colours and seed included.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Background {
-    Solid { color: [u8; 4] },
-    Gradient { top: [u8; 4], bottom: [u8; 4] },
+    Solid {
+        color: [u8; 4],
+    },
+    Gradient {
+        top: [u8; 4],
+        bottom: [u8; 4],
+    },
     /// `base` with per-pixel grain of up to `amplitude` per channel, from `seed`.
-    Noise { base: [u8; 4], amplitude: u8, seed: u64 },
+    Noise {
+        base: [u8; 4],
+        amplitude: u8,
+        seed: u64,
+    },
 }
 
 impl Background {
