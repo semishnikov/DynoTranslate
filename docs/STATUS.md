@@ -104,11 +104,12 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Verification
 
-- CI run 35693060565 at `fa404bf` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
-  `Interface`: formatting, clippy with warnings denied, all 156 workspace tests, and the headless
-  pipeline run on both platforms.
-- `lumen-layout` and `lumen-language` are portable, so every line of both is compiled, linted and
-  tested on Linux as well as on Windows. Their thresholds are pinned by tests rather than left to
+- CI run 35714597253 at `9fb1872` passes all three jobs: `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
+  `Interface`. All 222 workspace tests (including the 66 `lumen-corpus` tests, the CER threshold assertions,
+  and the language identification evaluation against corpus material) pass cleanly, Clippy reports zero
+  warnings, formatting is verified, and the headless pipeline runs green on both Linux and Windows.
+- `lumen-layout`, `lumen-language` and `lumen-corpus` are portable, so every line of all three is compiled,
+  linted and tested on Linux as well as on Windows. Their thresholds are pinned by tests rather than left to
   judgement.
 - `lumen-source/src/windows.rs` compiles only on `windows-latest` and has no tests of its own: it
   needs a real desktop session. Its correctness is limited to "it type-checks and lints clean on
@@ -119,9 +120,6 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   `EOF` on `productionresultssa2.blob.core.windows.net`), so the report numbers were not read back;
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
-- `lumen-corpus` has not been through CI yet: at the time of writing it is being pushed with the
-  consolidated pull request, and nothing here claims the corpus builds until the workflow says so.
-  This line gets replaced by a CI run reference the moment the branch is green.
 
 ## Next
 
