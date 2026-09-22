@@ -119,8 +119,9 @@ pub fn compose(spec: &SceneSpec) -> Result<CorpusScene, CorpusError> {
         let widest = widest_line(&chosen, &probe)?;
         let ascent = render::measure("Hh", &probe)?.ascent;
         let descent = render::measure("Hh", &probe)?.descent;
-        let needed = ascent + descent + (wanted - 1) as f32 * (ascent + descent + LEADING * size)
-            + 2.0 * margin_y as f32;
+        let line_height = ascent + descent;
+        let spacing = line_height + LEADING * size;
+        let needed = line_height + (wanted - 1) as f32 * spacing + 2.0 * margin_y as f32;
         if (widest <= usable_width && needed <= spec.height as f32) || size <= MINIMUM_SIZE {
             break;
         }
