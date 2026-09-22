@@ -120,12 +120,19 @@ jobs:
     runs-on: windows-latest
     # The shell is not a workspace member (Ubuntu CI has no WebKit/GTK), so it gets its
     # own job on the platform it ships on, where WebView2 needs no system packages.
+    # The frontend builds first: the Tauri build script embeds frontendDist at compile
+    # time and fails without it.
     defaults:
       run:
         shell: bash
-        working-directory: app/src-tauri
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install the toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
@@ -134,17 +141,29 @@ jobs:
         with:
           workspaces: app/src-tauri
 
+      - name: Install the frontend
+        working-directory: app
+        run: npm ci
+
+      - name: Build the frontend
+        working-directory: app
+        run: npm run build
+
       - name: Check formatting
+        working-directory: app/src-tauri
         run: cargo fmt --check
 
       - name: Lint
+        working-directory: app/src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Check
+        working-directory: app/src-tauri
         run: cargo check --all-targets
 
       - name: Report what failed
         if: failure()
+        working-directory: app/src-tauri
         run: |
           set +e
           cargo fmt --check > shell-fmt.txt 2>&1

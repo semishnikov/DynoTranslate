@@ -61,6 +61,10 @@ jobs:
           npx tauri signer generate -w "$RUNNER_TEMP/lumen-ephemeral.key" -f --ci
           echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP/lumen-ephemeral.key" >> "$GITHUB_ENV"
 
+      - name: Describe the Tauri setup
+        working-directory: app
+        run: npx tauri info > tauri-info.txt 2>&1; code=$?; cat tauri-info.txt; exit $code
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -70,6 +74,7 @@ jobs:
           UPDATER_PAT: ${{ secrets.UPDATER_PAT }}
         with:
           projectPath: app
+          tauriScript: npm run tauri
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: ${{ github.ref_type == 'tag' && format('Lumen {0}', github.ref_name) || '' }}
           releaseBody: See the assets to download and install this version.
@@ -85,3 +90,14 @@ jobs:
             app/src-tauri/target/release/bundle/msi/*.msi
             app/src-tauri/target/release/bundle/nsis/*-setup.exe
           retention-days: 14
+
+      - name: Report what failed
+        if: failure()
+        working-directory: app
+        run: |
+          set +e
+          if [ -f tauri-info.txt ]; then
+            tail -n 40 tauri-info.txt | while IFS= read -r line; do
+              printf '::error title=tauri-info::%s\n' "${line//'%'/'%25'}"
+            done
+          fi
