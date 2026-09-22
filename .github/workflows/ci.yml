@@ -70,6 +70,28 @@ jobs:
           sed -n '1,40p' diag.txt | while IFS= read -r line; do
             printf '::error title=clippy::%s\n' "${line//'%'/'%25'}"
           done
+          test_needed=1
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ -s fmt.txt ]; then
+            test_needed=0
+          fi
+          if grep -qE "(^|: )(error|warning)" clippy.txt; then
+            test_needed=0
+          fi
+          if [ "$test_needed" = "1" ]; then
+            cargo test --workspace --all-targets > test.txt 2>&1
+            { grep -E "^test result: FAILED" test.txt; grep -E "^error" test.txt; grep -E "^    [a-zA-Z0-9_:]+$" test.txt; grep -E "FAILED$" test.txt; } > testdiag.txt
+            sed -n '1,40p' testdiag.txt | while IFS= read -r line; do
+              printf '::error title=test-diag::%s\n' "${line//'%'/'%25'}"
+            done
+            if [ ! -s testdiag.txt ]; then
+              if ! cargo run --release --bin lumen-pipeline -- --scene menu --out-dir pipeline-out > pipeline.txt 2>&1; then
+                tail -n 20 pipeline.txt > pipediag.txt
+                sed -n '1,40p' pipediag.txt | while IFS= read -r line; do
+                  printf '::error title=pipeline-diag::%s\n' "${line//'%'/'%25'}"
+                done
+              fi
+            fi
+          fi
 
   web:
     name: Interface
