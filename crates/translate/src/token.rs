@@ -279,7 +279,8 @@ fn is_placeholder_identifier(inside: &str) -> bool {
     if t.is_empty() {
         return false;
     }
-    t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':')
+    t.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':')
 }
 
 fn is_key_hint(inside: &str) -> bool {
