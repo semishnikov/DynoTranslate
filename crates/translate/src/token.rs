@@ -264,7 +264,10 @@ fn is_tag_content(inside: &str) -> bool {
         return false;
     }
     let trimmed = t.trim_start_matches('/');
-    let tag_name = trimmed.split(|c: char| c.is_whitespace() || c == '=').next().unwrap_or("");
+    let tag_name = trimmed
+        .split(|c: char| c.is_whitespace() || c == '=')
+        .next()
+        .unwrap_or("");
     matches!(
         tag_name.to_ascii_lowercase().as_str(),
         "b" | "i" | "u" | "s" | "color" | "size" | "font" | "align" | "alpha" | "link" | "pos"
