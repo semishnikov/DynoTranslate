@@ -65,7 +65,22 @@ jobs:
         working-directory: app
         run: npx tauri info > tauri-info.txt 2>&1; code=$?; cat tauri-info.txt; exit $code
 
+      # Non-release builds run the CLI directly so the full build output is available to
+      # the failure reporter below. Tagged releases go through tauri-action instead: it
+      # assembles the updater JSON and the draft release, and the owner rehearses that
+      # path on a machine where the action logs are readable.
+      - name: Build the installer
+        if: github.ref_type != 'tag'
+        working-directory: app
+        run: |
+          set +e
+          npx tauri build > tauri-build.txt 2>&1
+          code=$?
+          tail -n 30 tauri-build.txt
+          exit $code
+
       - name: Build and release
+        if: github.ref_type == 'tag'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,7 +112,14 @@ jobs:
         run: |
           set +e
           if [ -f tauri-info.txt ]; then
-            tail -n 40 tauri-info.txt | while IFS= read -r line; do
+            tail -n 10 tauri-info.txt | while IFS= read -r line; do
               printf '::error title=tauri-info::%s\n' "${line//'%'/'%25'}"
+            done
+          fi
+          if [ -f tauri-build.txt ]; then
+            grep -iE "(^|: )(error|warning)" tauri-build.txt > build-diag.txt
+            tail -n 30 tauri-build.txt >> build-diag.txt
+            sed -n '1,40p' build-diag.txt | while IFS= read -r line; do
+              printf '::error title=tauri-build::%s\n' "${line//'%'/'%25'}"
             done
           fi
