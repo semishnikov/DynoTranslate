@@ -245,13 +245,30 @@ mod tests {
     fn italic_leans_to_the_right() {
         fn centroid_of_top_and_bottom(frame: &Frame) -> (f32, f32) {
             let ink = ink_pixels(frame);
-            let top = ink.iter().map(|(_, y)| *y).min().unwrap();
-            let bottom = ink.iter().map(|(_, y)| *y).max().unwrap();
+            let mut top = u32::MAX;
+            let mut bottom = 0;
+            for &(_, y) in &ink {
+                top = top.min(y);
+                bottom = bottom.max(y);
+            }
             let band = ((bottom - top) / 4).max(1);
-            let top_x: Vec<u32> = ink.iter().filter(|(_, y)| *y <= top + band).map(|(x, _)| *x).collect();
-            let bottom_x: Vec<u32> = ink.iter().filter(|(_, y)| *y >= bottom - band).map(|(x, _)| *x).collect();
-            let mean = |values: &[u32]| values.iter().map(|x| *x as f32).sum::<f32>() / values.len() as f32;
-            (mean(&top_x), mean(&bottom_x))
+            let mut top_sum = 0;
+            let mut top_count = 0;
+            let mut bottom_sum = 0;
+            let mut bottom_count = 0;
+            for &(x, y) in &ink {
+                if y <= top + band {
+                    top_sum += x;
+                    top_count += 1;
+                }
+                if y >= bottom - band {
+                    bottom_sum += x;
+                    bottom_count += 1;
+                }
+            }
+            let top_mean = top_sum as f32 / top_count.max(1) as f32;
+            let bottom_mean = bottom_sum as f32 / bottom_count.max(1) as f32;
+            (top_mean, bottom_mean)
         }
 
         let mut upright = paper(160, 80);

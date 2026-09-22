@@ -402,13 +402,24 @@ mod tests {
             assert!(case.regions.is_empty());
         }
         for (answers, (_, lines)) in material.script.iter().zip(expected.iter()) {
-            let texts: Vec<&str> = answers.iter().map(|answer| answer.text.as_str()).collect();
-            assert_eq!(texts, lines.iter().map(|line| line.as_str()).collect::<Vec<&str>>());
+            let mut texts = Vec::with_capacity(answers.len());
+            for answer in answers {
+                texts.push(answer.text.as_str());
+            }
+            let mut expected_texts = Vec::with_capacity(lines.len());
+            for line in lines {
+                expected_texts.push(line.as_str());
+            }
+            assert_eq!(texts, expected_texts);
             assert!(answers.iter().all(|answer| answer.confidence == 1.0));
         }
         for entry in &material.transcripts {
-            for line in &expected.iter().find(|(name, _)| name == &entry.name).unwrap().1 {
-                assert!(entry.text.contains(line.as_str()));
+            for (name, lines) in &expected {
+                if name == &entry.name {
+                    for line in lines {
+                        assert!(entry.text.contains(line.as_str()));
+                    }
+                }
             }
         }
     }
