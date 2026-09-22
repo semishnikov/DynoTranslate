@@ -8,6 +8,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Done
 
+- **M5.** Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n and the
+  accessibility audit. Merged as PR #10; `main` is at `6b5705b`.
 - **M4.** Portable renderer (fitting, inpainting, bundled faces), temporal stability, stroke-weight
   estimation, RTL/vertical writing modes, visual regression suite, ADR 0006, and the pipeline
   wired through stability + stub translation. Green on all three jobs (CI run 35728755276) and
@@ -128,11 +130,36 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
 
+## In progress: M6 (performance, soak and chaos, edge cases, updater)
+
+On branch `arena/01a0c968-dynotranslate` (PR #12), continued after the previous session hit its
+limit. This session, oldest first:
+
+- Borrow-check fix (`merged.clone()`), then the formatting backlog the annotation cap hid
+  behind earlier diffs: all multi-argument calls over the 72-character cap broken one per line
+  with trailing commas, overlong chains and struct literals restructured.
+- Lint round: the static-skip check binds the previous pass with `if let` (tuple form, MSRV is
+  still 1.77, so no let-chains), the driven-scene tuple has an alias, test-only runner
+  instrumentation is `cfg(test)`, and the never-read source counters are gone. Clippy is green
+  on both platforms (CI run 35740514554).
+- Two compositor damage tests asserted the block rect exactly; paint covers the block plus its
+  ink overflow by design, so they now assert one region covering the block corners, like the
+  neighbouring damage tests.
+- CI failure reporting: every cli test binary installs the `test-panic` hook, the Test step tees
+  its output, and the failure reporter restates failed binaries/tests plus the release-run tail.
+- Formatting rules proven against green code this session: call/macro arguments stay whole up
+  to exactly 72 characters (inclusive) and break above it; a single argument uses the full
+  width; `fn` signatures join while the whole line fits 120; match-arm tuples stay vertical.
+
+Not verified: the CI run for `4414130` (pushed, then the GitHub connection dropped before the
+result could be read). Two failures are still under investigation: a Windows Test-step failure
+that leaves no panic annotation, and a first-ever release-build failure of the pipeline binary
+(the shown tail hid the actual error; the reporter now greps it).
+
 ## Next
 
-1. **Land M5** (PR #10): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
-   i18n and the accessibility audit. Interface + both Rust jobs green on CI run 35731085910;
-   PR marked ready for review.
+1. **Land M6** (PR #12): green on all three jobs, then review. After the GitHub connection is
+   back: read run for `4414130`, fix whatever the test/release diagnosis names.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
