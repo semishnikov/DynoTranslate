@@ -216,19 +216,13 @@ mod tests {
         let spec = TextSpec::new("x", 0, 10, 16);
         assert_eq!(
             fit_text(&spec, fake_measure),
-            Err(FitError::EmptyBox {
-                width: 0,
-                height: 10
-            })
+            Err(FitError::EmptyBox { width: 0, height: 10 })
         );
     }
 
     #[test]
     fn a_zero_font_size_is_an_error() {
         let spec = TextSpec::new("x", 10, 10, 0);
-        assert_eq!(
-            fit_text(&spec, fake_measure),
-            Err(FitError::ZeroFontSize { size: 0 })
-        );
+        assert_eq!(fit_text(&spec, fake_measure), Err(FitError::ZeroFontSize { size: 0 }));
     }
 }

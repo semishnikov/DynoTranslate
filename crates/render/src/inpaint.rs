@@ -29,8 +29,7 @@ pub fn inpaint(source: &Frame, region: Rect) -> Vec<[u8; 4]> {
     }
 
     // One-pixel halo of real source pixels is the Dirichlet boundary.
-    let halo = Rect::new(region.x - 1, region.y - 1, region.width + 2, region.height + 2)
-        .clamp_to(&source.bounds());
+    let halo = Rect::new(region.x - 1, region.y - 1, region.width + 2, region.height + 2).clamp_to(&source.bounds());
     let halo = match halo {
         Some(halo) => halo,
         None => return vec![[0, 0, 0, 0]; width * height],
@@ -54,12 +53,7 @@ pub fn inpaint(source: &Frame, region: Rect) -> Vec<[u8; 4]> {
             let on_boundary = gx == 0 || gy == 0 || gx == grid_w - 1 || gy == grid_h - 1;
             let index = gy * grid_w + gx;
             if on_boundary {
-                grid[index] = [
-                    pixel[0] as f32,
-                    pixel[1] as f32,
-                    pixel[2] as f32,
-                    pixel[3] as f32,
-                ];
+                grid[index] = [pixel[0] as f32, pixel[1] as f32, pixel[2] as f32, pixel[3] as f32];
                 fixed[index] = true;
                 sum[0] += grid[index][0];
                 sum[1] += grid[index][1];

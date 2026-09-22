@@ -10,36 +10,20 @@
 //! comparison activates on the next run. Nothing else changes.
 
 use lumen_core::{Frame, Rect};
-use lumen_render::{
-    draw_fitted, inpaint, FontWeight, Renderer, TextSpec, TextAlign, WritingMode,
-};
+use lumen_render::{draw_fitted, inpaint, FontWeight, Renderer, TextAlign, TextSpec, WritingMode};
 
 fn scene(width: u32, height: u32, colour: [u8; 4]) -> Frame {
     Frame::filled(width, height, colour).expect("dimensions")
 }
 
 fn ink_count(frame: &Frame) -> usize {
-    frame
-        .as_bytes()
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0)
-        .count()
+    frame.as_bytes().chunks_exact(4).filter(|pixel| pixel[3] > 0).count()
 }
 
 fn render_label(spec: &TextSpec) -> Frame {
     let mut renderer = Renderer::new().expect("bundled fonts");
-    let mut frame = Frame::filled(spec.max_width + 16, spec.max_height + 16, [0, 0, 0, 0])
-        .expect("dimensions");
-    draw_fitted(
-        &mut renderer,
-        &mut frame,
-        spec,
-        (8, 8),
-        [255, 255, 255, 255],
-        None,
-        1.0,
-    )
-    .expect("fit");
+    let mut frame = Frame::filled(spec.max_width + 16, spec.max_height + 16, [0, 0, 0, 0]).expect("dimensions");
+    draw_fitted(&mut renderer, &mut frame, spec, (8, 8), [255, 255, 255, 255], None, 1.0).expect("fit");
     frame
 }
 
@@ -62,12 +46,7 @@ fn centred_and_left_text_differ_but_both_have_ink() {
 #[test]
 fn a_tiny_box_never_reports_a_size_below_the_floor() {
     let mut renderer = Renderer::new().expect("bundled fonts");
-    let spec = TextSpec::new(
-        "Pack my box with five dozen liquor jugs",
-        64,
-        18,
-        32,
-    );
+    let spec = TextSpec::new("Pack my box with five dozen liquor jugs", 64, 18, 32);
     let ready = renderer.fit(&spec).expect("fit");
     assert!(
         ready.fitted.size >= 32.0 * 0.8 - 0.01,
@@ -81,13 +60,9 @@ fn a_tiny_box_never_reports_a_size_below_the_floor() {
 fn vertical_mode_produces_a_taller_ink_box_than_horizontal() {
     let mut renderer = Renderer::new().expect("bundled fonts");
     let text = "Notes";
-    let horizontal = renderer
-        .fit(&TextSpec::new(text, 160, 40, 18))
-        .expect("fit");
+    let horizontal = renderer.fit(&TextSpec::new(text, 160, 40, 18)).expect("fit");
     let vertical = renderer
-        .fit(
-            &TextSpec::new(text, 40, 160, 18).with_writing(WritingMode::Vertical),
-        )
+        .fit(&TextSpec::new(text, 40, 160, 18).with_writing(WritingMode::Vertical))
         .expect("fit");
     // Vertical stacks one glyph per line: more lines, taller logical layout.
     assert!(

@@ -90,18 +90,12 @@ mod tests {
 
     #[test]
     fn a_short_box_is_horizontal_even_with_japanese_text() {
-        assert_eq!(
-            writing_mode_of("メニュー", 200, 40),
-            WritingMode::Horizontal
-        );
+        assert_eq!(writing_mode_of("メニュー", 200, 40), WritingMode::Horizontal);
     }
 
     #[test]
     fn a_tall_box_of_japanese_text_is_vertical() {
-        assert_eq!(
-            writing_mode_of("メニューを開く", 40, 200),
-            WritingMode::Vertical
-        );
+        assert_eq!(writing_mode_of("メニューを開く", 40, 200), WritingMode::Vertical);
     }
 
     #[test]

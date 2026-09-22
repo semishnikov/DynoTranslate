@@ -1,5 +1,5 @@
 use lumen_core::{coalesce, Frame, Rect};
-use lumen_render::{erase, FontWeight, Renderer, TextSpec, TextAlign, WritingMode};
+use lumen_render::{erase, FontWeight, Renderer, TextAlign, TextSpec, WritingMode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,14 +219,9 @@ impl Compositor {
             .with_writing(block.writing);
 
             if let Ok(ready) = self.renderer.fit(&spec) {
-                let ink = self.renderer.draw(
-                    frame,
-                    &ready,
-                    origin,
-                    block.foreground,
-                    block.outline,
-                    layout.opacity,
-                );
+                let ink = self
+                    .renderer
+                    .draw(frame, &ready, origin, block.foreground, block.outline, layout.opacity);
                 let covered = rect.union(&ink.clamp_to(&bounds).unwrap_or(rect));
                 painted.push(covered);
             } else {
@@ -505,10 +500,8 @@ mod tests {
         let frame = Frame::packed(width, height, pixels).expect("dimensions");
         let composition = compositor.compose(
             &frame,
-            &OverlayLayout::new(OverlayStyle::Seamless).with_blocks(vec![OverlayBlock::new(
-                Rect::new(20, 10, 60, 20),
-                "Hello",
-            )]),
+            &OverlayLayout::new(OverlayStyle::Seamless)
+                .with_blocks(vec![OverlayBlock::new(Rect::new(20, 10, 60, 20), "Hello")]),
         );
         // Inside the erased box the overlay is opaque (it has to cover the original glyphs).
         let centre = composition.frame.pixel(50, 20);

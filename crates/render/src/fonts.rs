@@ -20,19 +20,10 @@ pub enum FontLibraryError {
 /// registers its own family, weight and style for the matcher to choose from.
 const BUNDLED: &[(&str, &[u8])] = &[
     ("DejaVuSans.ttf", include_bytes!("../fonts/DejaVuSans.ttf")),
-    (
-        "DejaVuSans-Bold.ttf",
-        include_bytes!("../fonts/DejaVuSans-Bold.ttf"),
-    ),
+    ("DejaVuSans-Bold.ttf", include_bytes!("../fonts/DejaVuSans-Bold.ttf")),
     ("DejaVuSerif.ttf", include_bytes!("../fonts/DejaVuSerif.ttf")),
-    (
-        "DejaVuSerif-Bold.ttf",
-        include_bytes!("../fonts/DejaVuSerif-Bold.ttf"),
-    ),
-    (
-        "DejaVuSansMono.ttf",
-        include_bytes!("../fonts/DejaVuSansMono.ttf"),
-    ),
+    ("DejaVuSerif-Bold.ttf", include_bytes!("../fonts/DejaVuSerif-Bold.ttf")),
+    ("DejaVuSansMono.ttf", include_bytes!("../fonts/DejaVuSansMono.ttf")),
     (
         "DejaVuSansMono-Bold.ttf",
         include_bytes!("../fonts/DejaVuSansMono-Bold.ttf"),
@@ -59,13 +50,15 @@ impl FontLibrary {
     /// Builds the library from the embedded faces. Infallible today; the error is kept so a
     /// future face that fails to parse reports which file was at fault.
     pub fn bundled() -> Result<Self, FontLibraryError> {
-        let sources = BUNDLED.iter().map(|(name, bytes)| {
-            if bytes.is_empty() {
-                return Err(FontLibraryError::MissingFont { name });
-            }
-            Ok(fontdb::Source::Binary(Arc::new(StaticFont(bytes))))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        let sources = BUNDLED
+            .iter()
+            .map(|(name, bytes)| {
+                if bytes.is_empty() {
+                    return Err(FontLibraryError::MissingFont { name });
+                }
+                Ok(fontdb::Source::Binary(Arc::new(StaticFont(bytes))))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let mut system = FontSystem::new_with_fonts(sources);
         // cosmic-text points the generic families at Open Sans and friends, which are not in
@@ -135,10 +128,7 @@ mod tests {
     #[test]
     fn shaping_cyrillic_produces_glyphs() {
         let mut library = FontLibrary::bundled().expect("bundled fonts parse");
-        let mut buffer = cosmic_text::Buffer::new(
-            library.system(),
-            cosmic_text::Metrics::new(16.0, 20.0),
-        );
+        let mut buffer = cosmic_text::Buffer::new(library.system(), cosmic_text::Metrics::new(16.0, 20.0));
         buffer.set_size(Some(200.0), Some(40.0));
         buffer.set_text(
             "Настройки",

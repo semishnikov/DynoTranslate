@@ -242,8 +242,10 @@ mod tests {
     #[test]
     fn a_jittering_reading_does_not_replace_the_agreed_one_until_it_agrees() {
         let mut tracker = StabilityTracker::new();
-        let mut config = StabilityConfig::default();
-        config.agree_frames = 2;
+        let config = StabilityConfig {
+            agree_frames: 2,
+            ..StabilityConfig::default()
+        };
 
         tracker.observe(&[observation("Настройки", 10, 10)], &config);
         // One noisy frame: candidate, not yet agreed.
@@ -261,8 +263,10 @@ mod tests {
     #[test]
     fn two_frames_of_agreement_replace_the_source_and_drop_the_stale_translation() {
         let mut tracker = StabilityTracker::new();
-        let mut config = StabilityConfig::default();
-        config.agree_frames = 2;
+        let config = StabilityConfig {
+            agree_frames: 2,
+            ..StabilityConfig::default()
+        };
 
         tracker.observe(&[observation("Options", 10, 10)], &config);
         tracker.provide_translation("Options", "Настройки".to_owned());
@@ -317,8 +321,10 @@ mod tests {
     #[test]
     fn a_block_that_leaves_the_screen_is_forgotten_after_the_miss_budget() {
         let mut tracker = StabilityTracker::new();
-        let mut config = StabilityConfig::default();
-        config.forget_misses = 2;
+        let config = StabilityConfig {
+            forget_misses: 2,
+            ..StabilityConfig::default()
+        };
 
         tracker.observe(&[observation("Tooltip", 10, 10)], &config);
         assert_eq!(tracker.observe(&[], &config).len(), 1);

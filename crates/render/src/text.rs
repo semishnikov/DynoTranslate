@@ -8,8 +8,7 @@
 use std::collections::HashSet;
 
 use cosmic_text::{
-    Align, Attrs, Buffer, Ellipsize, Family, Metrics, PhysicalGlyph, Shaping, Style, SwashCache,
-    Weight, Wrap,
+    Align, Attrs, Buffer, Ellipsize, Family, Metrics, PhysicalGlyph, Shaping, Style, SwashCache, Weight, Wrap,
 };
 use lumen_core::{Frame, Rect};
 use serde::{Deserialize, Serialize};
@@ -170,29 +169,24 @@ impl Renderer {
             let cache = &mut self.cache;
             let frame = &mut *frame;
             let mut local: Option<Rect> = None;
-            cache.with_pixels(
-                font_system,
-                physical.cache_key,
-                cosmic_color(color),
-                |x, y, pixel| {
-                    let px = physical.x + x + ox;
-                    let py = physical.y + y + oy;
-                    if px < 0 || py < 0 {
-                        return;
-                    }
-                    let (ux, uy) = (px as u32, py as u32);
-                    if ux >= frame.width() || uy >= frame.height() {
-                        return;
-                    }
-                    let base = frame.pixel(ux, uy);
-                    frame.set_pixel(ux, uy, blend(base, mask_colour(pixel, color)));
-                    let rect = Rect::new(px, py, 1, 1);
-                    local = Some(match local {
-                        Some(previous) => previous.union(&rect),
-                        None => rect,
-                    });
-                },
-            );
+            cache.with_pixels(font_system, physical.cache_key, cosmic_color(color), |x, y, pixel| {
+                let px = physical.x + x + ox;
+                let py = physical.y + y + oy;
+                if px < 0 || py < 0 {
+                    return;
+                }
+                let (ux, uy) = (px as u32, py as u32);
+                if ux >= frame.width() || uy >= frame.height() {
+                    return;
+                }
+                let base = frame.pixel(ux, uy);
+                frame.set_pixel(ux, uy, blend(base, mask_colour(pixel, color)));
+                let rect = Rect::new(px, py, 1, 1);
+                local = Some(match local {
+                    Some(previous) => previous.union(&rect),
+                    None => rect,
+                });
+            });
             if let Some(rect) = local {
                 touched = Some(match touched {
                     Some(previous) => previous.union(&rect),
@@ -209,15 +203,8 @@ impl Renderer {
             FontWeight::Regular => Weight::NORMAL,
             FontWeight::Bold => Weight::BOLD,
         };
-        let style = if spec.italic {
-            Style::Italic
-        } else {
-            Style::Normal
-        };
-        Attrs::new()
-            .family(Family::SansSerif)
-            .weight(weight)
-            .style(style)
+        let style = if spec.italic { Style::Italic } else { Style::Normal };
+        Attrs::new().family(Family::SansSerif).weight(weight).style(style)
     }
 
     fn measure(&mut self, text: &str, size: f32, spec: &TextSpec) -> (f32, u32) {
@@ -300,12 +287,7 @@ impl Renderer {
         let y = min_y.floor().min(0.0) as i32;
         let right = max_x.ceil().max(spec.max_width as f32) as i32;
         let bottom = max_y.ceil().max(0.0) as i32;
-        Rect::new(
-            x,
-            y,
-            (right - x).max(0) as u32,
-            (bottom - y).max(1) as u32,
-        )
+        Rect::new(x, y, (right - x).max(0) as u32, (bottom - y).max(1) as u32)
     }
 }
 
@@ -315,16 +297,7 @@ impl Default for Renderer {
     }
 }
 
-const OUTLINE_OFFSETS: [(i32, i32); 8] = [
-    (-1, -1),
-    (0, -1),
-    (1, -1),
-    (-1, 0),
-    (1, 0),
-    (-1, 1),
-    (0, 1),
-    (1, 1),
-];
+const OUTLINE_OFFSETS: [(i32, i32); 8] = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)];
 
 fn shift(physical: &PhysicalGlyph, dx: i32, dy: i32) -> PhysicalGlyph {
     PhysicalGlyph {
@@ -410,14 +383,7 @@ pub fn draw_fitted(
     opacity: f32,
 ) -> Result<Rect, FitError> {
     let ready = renderer.fit(spec)?;
-    Ok(renderer.draw(
-        frame,
-        &ready,
-        origin,
-        foreground,
-        outline,
-        opacity,
-    ))
+    Ok(renderer.draw(frame, &ready, origin, foreground, outline, opacity))
 }
 
 #[cfg(test)]
@@ -429,11 +395,7 @@ mod tests {
     }
 
     fn ink_pixels(frame: &Frame) -> usize {
-        frame
-            .as_bytes()
-            .chunks_exact(4)
-            .filter(|pixel| pixel[3] > 0)
-            .count()
+        frame.as_bytes().chunks_exact(4).filter(|pixel| pixel[3] > 0).count()
     }
 
     #[test]
@@ -442,14 +404,7 @@ mod tests {
         let mut frame = Frame::filled(200, 60, [0, 0, 0, 0]).expect("dims");
         let spec = TextSpec::new("Continue", 180, 40, 18);
         let ready = renderer.fit(&spec).expect("fit");
-        renderer.draw(
-            &mut frame,
-            &ready,
-            (10, 10),
-            [255, 255, 255, 255],
-            None,
-            1.0,
-        );
+        renderer.draw(&mut frame, &ready, (10, 10), [255, 255, 255, 255], None, 1.0);
         assert!(ink_pixels(&frame) > 20, "expected visible glyphs");
     }
 
@@ -458,17 +413,9 @@ mod tests {
         let draw = || {
             let mut renderer = renderer();
             let mut frame = Frame::filled(160, 48, [0, 0, 0, 0]).expect("dims");
-            let spec =
-                TextSpec::new("Настройки", 140, 32, 16).with_weight(FontWeight::Bold);
+            let spec = TextSpec::new("Настройки", 140, 32, 16).with_weight(FontWeight::Bold);
             let ready = renderer.fit(&spec).expect("fit");
-            renderer.draw(
-                &mut frame,
-                &ready,
-                (4, 8),
-                [240, 240, 240, 255],
-                None,
-                1.0,
-            );
+            renderer.draw(&mut frame, &ready, (4, 8), [240, 240, 240, 255], None, 1.0);
             frame.as_bytes().to_vec()
         };
         assert_eq!(draw(), draw());
@@ -484,11 +431,7 @@ mod tests {
             24,
         );
         let ready = renderer.fit(&spec).expect("fit");
-        assert!(
-            ready.fitted.size >= 24.0 * 0.8 - 0.01,
-            "{}",
-            ready.fitted.size
-        );
+        assert!(ready.fitted.size >= 24.0 * 0.8 - 0.01, "{}", ready.fitted.size);
     }
 
     #[test]
@@ -518,14 +461,7 @@ mod tests {
             let mut frame = Frame::filled(220, 48, [0, 0, 0, 0]).expect("dims");
             let spec = TextSpec::new("AGGRESSIVE", 200, 40, 28).with_weight(weight);
             let ready = renderer.fit(&spec).expect("fit");
-            renderer.draw(
-                &mut frame,
-                &ready,
-            (4, 4),
-                [255, 255, 255, 255],
-                None,
-                1.0,
-            );
+            renderer.draw(&mut frame, &ready, (4, 4), [255, 255, 255, 255], None, 1.0);
             ink_pixels(&frame)
         };
         let regular = measure(FontWeight::Regular);
@@ -540,24 +476,10 @@ mod tests {
         let mut right = Frame::filled(200, 40, [0, 0, 0, 0]).expect("dims");
         let base = TextSpec::new("End", 180, 30, 18);
         let left_ready = renderer.fit(&base).expect("fit");
-        renderer.draw(
-            &mut left,
-            &left_ready,
-            (0, 4),
-            [255, 255, 255, 255],
-            None,
-            1.0,
-        );
+        renderer.draw(&mut left, &left_ready, (0, 4), [255, 255, 255, 255], None, 1.0);
         let right_spec = base.clone().with_align(TextAlign::Right);
         let right_ready = renderer.fit(&right_spec).expect("fit");
-        renderer.draw(
-            &mut right,
-            &right_ready,
-            (0, 4),
-            [255, 255, 255, 255],
-            None,
-            1.0,
-        );
+        renderer.draw(&mut right, &right_ready, (0, 4), [255, 255, 255, 255], None, 1.0);
 
         let centroid = |frame: &Frame| {
             let mut sum = 0_u32;
@@ -583,8 +505,7 @@ mod tests {
     #[test]
     fn vertical_fitting_keeps_the_floor() {
         let mut renderer = renderer();
-        let spec =
-            TextSpec::new("メニューを開く", 40, 150, 20).with_writing(WritingMode::Vertical);
+        let spec = TextSpec::new("メニューを開く", 40, 150, 20).with_writing(WritingMode::Vertical);
         let ready = renderer.fit(&spec).expect("fit");
         assert!(ready.fitted.size >= 20.0 * 0.8 - 0.01);
     }
@@ -596,14 +517,7 @@ mod tests {
         let mut with = Frame::filled(200, 48, [0, 0, 0, 0]).expect("dims");
         let spec = TextSpec::new("Outlined", 180, 36, 20);
         let ready = renderer.fit(&spec).expect("fit");
-        renderer.draw(
-            &mut without,
-            &ready,
-            (8, 8),
-            [255, 255, 255, 255],
-            None,
-            1.0,
-        );
+        renderer.draw(&mut without, &ready, (8, 8), [255, 255, 255, 255], None, 1.0);
         renderer.draw(
             &mut with,
             &ready,
@@ -622,22 +536,9 @@ mod tests {
         let mut faded = Frame::filled(200, 48, [0, 0, 0, 0]).expect("dims");
         let spec = TextSpec::new("Dim", 180, 36, 20);
         let ready = renderer.fit(&spec).expect("fit");
-        renderer.draw(
-            &mut opaque,
-            &ready,
-            (4, 4),
-            [255, 255, 255, 255],
-            None,
-            1.0,
-        );
+        renderer.draw(&mut opaque, &ready, (4, 4), [255, 255, 255, 255], None, 1.0);
         renderer.draw(&mut faded, &ready, (4, 4), [255, 255, 255, 255], None, 0.5);
-        let total = |frame: &Frame| -> u32 {
-            frame
-                .as_bytes()
-                .chunks_exact(4)
-                .map(|p| u32::from(p[3]))
-                .sum()
-        };
+        let total = |frame: &Frame| -> u32 { frame.as_bytes().chunks_exact(4).map(|p| u32::from(p[3])).sum() };
         assert!(total(&faded) < total(&opaque));
     }
 
@@ -647,14 +548,7 @@ mod tests {
         let mut frame = Frame::filled(160, 48, [0, 0, 0, 0]).expect("dims");
         let spec = TextSpec::new("שלום", 140, 36, 20);
         let ready = renderer.fit(&spec).expect("fit");
-        renderer.draw(
-            &mut frame,
-            &ready,
-            (4, 4),
-            [255, 255, 255, 255],
-            None,
-            1.0,
-        );
+        renderer.draw(&mut frame, &ready, (4, 4), [255, 255, 255, 255], None, 1.0);
         assert!(ink_pixels(&frame) > 0, "Hebrew must produce glyphs");
     }
 }
