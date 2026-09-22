@@ -178,9 +178,14 @@ pub fn protect(text: &str, do_not_translate: &[&str]) -> (String, Vec<ProtectedT
     let mut search_idx = 0;
     while search_idx < norm.len() {
         let remainder = &norm[search_idx..];
-        if let Some((offset, ch)) = remainder.char_indices().find(|(_, c)| {
-            c.is_ascii_digit() || *c == '$' || *c == '#' || *c == '€' || *c == '£'
-        }) {
+        let mut match_token = None;
+        for (offset, ch) in remainder.char_indices() {
+            if ch.is_ascii_digit() || ch == '$' || ch == '#' || ch == '€' || ch == '£' {
+                match_token = Some((offset, ch));
+                break;
+            }
+        }
+        if let Some((offset, ch)) = match_token {
             let start = search_idx + offset;
             let num_remainder = &norm[start..];
             let mut num_len = 0;
