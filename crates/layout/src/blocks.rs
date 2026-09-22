@@ -213,12 +213,7 @@ fn build(frame: &Frame, lines: Vec<Line>, context: Context) -> Block {
 /// without a font name. Below [`BOLD_COVERAGE`] the strokes are thin; above it they are not.
 const BOLD_COVERAGE: f32 = 0.22;
 
-fn estimate_weight(
-    frame: &Frame,
-    bounds: Rect,
-    background: [u8; 4],
-    foreground: [u8; 4],
-) -> StrokeWeight {
+fn estimate_weight(frame: &Frame, bounds: Rect, background: [u8; 4], foreground: [u8; 4]) -> StrokeWeight {
     let Some(region) = bounds.clamp_to(&frame.bounds()) else {
         return StrokeWeight::Regular;
     };

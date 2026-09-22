@@ -112,11 +112,7 @@ impl StabilityTracker {
     }
 
     /// Folds this frame's observations into the tracks and returns the blocks to draw.
-    pub fn observe(
-        &mut self,
-        observations: &[Observation],
-        config: &StabilityConfig,
-    ) -> Vec<StableBlock> {
+    pub fn observe(&mut self, observations: &[Observation], config: &StabilityConfig) -> Vec<StableBlock> {
         let mut matched = vec![false; self.tracks.len()];
 
         // Greedy best-IoU matching: observations are few (a screenful of UI), so the quadratic

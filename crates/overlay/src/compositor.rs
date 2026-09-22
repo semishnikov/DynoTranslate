@@ -183,13 +183,7 @@ impl Compositor {
         Composition { frame, damage }
     }
 
-    fn paint_in_place(
-        &mut self,
-        source: &Frame,
-        frame: &mut Frame,
-        layout: &OverlayLayout,
-        bounds: Rect,
-    ) -> Vec<Rect> {
+    fn paint_in_place(&mut self, source: &Frame, frame: &mut Frame, layout: &OverlayLayout, bounds: Rect) -> Vec<Rect> {
         let mut painted = Vec::new();
         for block in &layout.blocks {
             if block.text.is_empty() {
@@ -279,7 +273,7 @@ impl Compositor {
             }
         }
 
-        let mut y = band.y + (line_height / 4);
+        let mut y = band.y + (line_height / 4) as i32;
         for block in texts {
             let row = Rect::new(band.x + 8, y, band.width.saturating_sub(16), line_height);
             let spec = TextSpec::new(
@@ -302,7 +296,7 @@ impl Compositor {
                     layout.opacity,
                 );
             }
-            y += line_height;
+            y += line_height as i32;
             if y >= band.bottom() {
                 break;
             }
