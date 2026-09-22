@@ -29,7 +29,6 @@
       "id": "main",
       "iconPath": "icons/icon.png",
       "tooltip": "Lumen",
-      "menu": false,
       "title": "Lumen"
     }
   },

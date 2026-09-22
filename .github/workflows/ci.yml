@@ -171,7 +171,7 @@ jobs:
             printf '::error title=shell-fmt::%s\n' "${line//'%'/'%25'}"
           done
           cargo clippy --all-targets --message-format short -- -D warnings > shell-clippy.txt 2>&1
-          grep -E "(^|: )(error|warning)" shell-clippy.txt > shell-diag.txt
+          grep -iE "(^|: )(error|warning)" shell-clippy.txt > shell-diag.txt
           if [ ! -s shell-diag.txt ]; then
             tail -n 30 shell-clippy.txt > shell-diag.txt
           fi
