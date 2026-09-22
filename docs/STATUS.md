@@ -157,26 +157,49 @@ What the continuation session did, oldest first:
   to exactly 72 characters (inclusive) and break above it; a single argument uses the full
   width; `fn` signatures join while the whole line fits 120; match-arm tuples stay vertical.
 
-In progress: the M6 updater and installer (scope `installer-too`, chosen by the owner).
-`src-tauri/` moved under `app/` (standard Tauri layout, so `frontendDist` resolves); the icon
-set is generated from a placeholder `icon-source.png` and committed; `release.yml` builds the
-MSI/NSIS installers on pull requests and `main` and turns `v*` tags into signed draft releases;
-the `shell` job checks the Tauri crate on `windows-latest`. The updater reads releases from this
-repository with a read-only token baked into the binary (owner choice over a public mirror or a
-public repo); the signing keypair was generated in-session, the public half is committed in
-`tauri.conf.json`, the private half travels to the owner in chat only. The Settings About card
-checks, downloads, installs and relaunches through a new updater store, verified locally with
-`tsc`, `vite build` and `oxlint` (all green). Still unverified: the new CI jobs (runs pending),
-the two repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `UPDATER_PAT` — owner steps), and the
-end-to-end update against a real tagged release, which needs a desktop machine.
+The updater and installer joined the same branch. `src-tauri/` moved under `app/` (standard
+Tauri layout, so `frontendDist` resolves); the icon set is generated from a placeholder
+`icon-source.png` and committed; `release.yml` builds the MSI/NSIS installers on pull requests
+and `main` and turns `v*` tags into signed draft releases; the `shell` job checks the Tauri
+crate on `windows-latest`. The updater reads releases from this repository with a read-only
+token baked into the binary (owner choice over a public mirror or a public repo); the signing
+keypair was generated in-session, the public half is committed in `tauri.conf.json`, the private
+half travels to the owner in chat only. The Settings About card checks, downloads, installs and
+relaunches through a new updater store, verified locally with `tsc`, `vite build` and `oxlint`.
+
+## In progress: installer fix and the edge-case pass
+
+Continued on `arena/01a0ca15-dynotranslate`, branched from `19219f9`, because that session's
+branch cannot be pushed to from here. This supersedes PR #12 the way #12 superseded #11.
+
+What was verified on `19219f9` (CI run 35757463931): Interface, Shell, Rust ubuntu and Rust
+windows are green. The bundle job (run 35757463866) failed after 16 minutes. Its annotations
+were the tail of `tauri info`, not the build error: GitHub keeps about ten error annotations
+per step, and the reporter emitted `tauri info` first, so the error never left the runner.
+`gh run view --log` still dies with `EOF` on the log host.
+
+The failure that layout implies, and that the missing log is expected to name: the ephemeral
+key was exported as `TAURI_SIGNING_PRIVATE_KEY_PATH`. `tauri build` does not read that
+variable ([tauri#15028](https://github.com/tauri-apps/tauri/issues/15028)); it reads
+`TAURI_SIGNING_PRIVATE_KEY` as key contents or as a path. The workflow now sets that name,
+checks the Windows process can open the file before the long compile, and emits the build
+error from the build step itself. Not yet confirmed by a green bundle job.
+
+Pushed in the same commits, not yet confirmed by CI: merge drops empty and zero-area runs;
+stability does not queue blank text; edge tests cover a 1×1 frame, padded strides, a sub-tile
+frame, a zero-height line, a one-pixel block, an empty fit, token overlap and a dropped
+sentinel, translation-memory normalisation and the capacity floor, and the circuit breaker
+reopening from half-open. Nothing here was executed locally. There is still no Rust toolchain
+in this environment.
 
 ## Next
 
-1. **Land M6** (PR #12): the performance/soak/chaos part is green on all three jobs (CI run
-   35746341895); the updater and installer joined the same branch. Merge after the new `shell`
-   and `bundle-windows` jobs go green, then the owner stores the two secrets
-   (`TAURI_SIGNING_PRIVATE_KEY` from the chat handoff, plus a fresh read-only `UPDATER_PAT`)
-   and rehearses one `v*` tag into a draft release on a desktop machine.
+1. **Land M6** from `arena/01a0ca15-dynotranslate` (it supersedes PR #12; do not merge #12, its
+   installer job is red for the reason above). Merge after `bundle-windows` is green on the new
+   pull request. Then the owner stores the two secrets (`TAURI_SIGNING_PRIVATE_KEY` from the
+   chat handoff, plus a fresh read-only `UPDATER_PAT`) and rehearses one `v*` tag into a draft
+   release on a desktop machine. If the bundle job fails again, the build step's annotations
+   are the error; read those before changing the workflow.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
@@ -188,11 +211,12 @@ end-to-end update against a real tagged release, which needs a desktop machine.
    engine is passed to `gate::score_recognition` in the double's place and nothing else changes.
    The corpus font's remaining scripts (Greek, Han, kana, hangul, Arabic, Hebrew, Thai,
    Devanagari) join as skeleton additions when the languages that need them do.
-5. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-6. Text effects beyond weight (outline detection from the source pixels), which layout still
+5. Text effects beyond weight (outline detection from the source pixels), which layout still
    leaves alone.
-7. M6: Performance tuning, edge cases, chaos and soak runs, updater, installer.
-8. M7: Release: signed installer, winget manifest, QA report, manual test plan.
+6. M7: Release: signed installer, winget manifest, QA report, manual test plan. The shell
+   still keeps settings in memory only; the architecture's versioned settings file is not
+   wired, and the interface does not call the shell commands yet. That is the first gap after
+   M6 lands, not a reason to hold the installer.
 
 ## Known limitations
 
@@ -223,5 +247,7 @@ corpus gate; PRs #4 and #6 will be closed when it merges.
 - A product name. The code says Lumen, the repository says DynoTranslate, and "Lumen" alongside
   translation is widely used by unrelated projects. Three candidates have to be checked against
   GitHub, winget and the Microsoft Store.
-- A code-signing certificate before M6; not a blocker until then.
+- A Windows Authenticode certificate before the signed installer in M7. The updater minisign
+  key is a different key; its private half is the `TAURI_SIGNING_PRIVATE_KEY` secret, handed
+  over in chat, and is not this certificate.
 

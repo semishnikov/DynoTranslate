@@ -177,6 +177,37 @@ mod tests {
     }
 
     #[test]
+    fn a_report_with_no_tiles_does_not_divide_by_zero() {
+        let mut scheduler = CaptureScheduler::new(SchedulerConfig::default());
+        let delay = scheduler.next_delay(&report(0, 0));
+        assert!((delay.as_secs_f32() - 0.5).abs() < 1e-3);
+        assert_eq!(scheduler.current_hz(), 2.0);
+    }
+
+    #[test]
+    fn a_change_at_the_activity_threshold_counts_as_active() {
+        let mut scheduler = CaptureScheduler::new(SchedulerConfig {
+            activity_threshold: 0.25,
+            ..SchedulerConfig::default()
+        });
+        let before = scheduler.current_hz();
+        // 1/4 is exact in f32, so the comparison is the threshold and not a rounding accident.
+        scheduler.next_delay(&report(1, 4));
+        assert!(scheduler.current_hz() > before);
+    }
+
+    #[test]
+    fn a_change_below_the_activity_threshold_stays_at_idle() {
+        let mut scheduler = CaptureScheduler::new(SchedulerConfig {
+            activity_threshold: 0.25,
+            calm_frames: 100,
+            ..SchedulerConfig::default()
+        });
+        scheduler.next_delay(&report(1, 5));
+        assert_eq!(scheduler.current_hz(), 2.0);
+    }
+
+    #[test]
     fn delays_match_the_chosen_rate() {
         let mut scheduler = CaptureScheduler::new(SchedulerConfig::default());
         let delay = scheduler.next_delay(&report(0, 100));

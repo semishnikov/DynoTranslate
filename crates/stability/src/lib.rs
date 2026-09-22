@@ -80,8 +80,13 @@ impl StableBlock {
     }
 
     /// Whether an engine should be asked for a translation this frame.
+    ///
+    /// Blank text is not queued. There is nothing to translate, and a request spent on it
+    /// would come back as a box the compositor does not draw.
     pub fn needs_translation(&self) -> bool {
-        !self.numeric_only && self.translated_source.as_deref() != Some(self.source_text.as_str())
+        !self.numeric_only
+            && !self.source_text.trim().is_empty()
+            && self.translated_source.as_deref() != Some(self.source_text.as_str())
     }
 }
 
@@ -310,6 +315,17 @@ mod tests {
         let blocks = tracker.observe(&[observation("New Game", 0, 0)], &config);
         assert!(!blocks[0].needs_translation());
         assert_eq!(blocks[0].display_text(), "Новая игра");
+    }
+
+    #[test]
+    fn empty_text_is_never_queued_for_translation() {
+        install_annotations();
+        let mut tracker = StabilityTracker::new();
+        let config = StabilityConfig::default();
+        let blocks = tracker.observe(&[observation("", 0, 0), observation("   ", 200, 0)], &config);
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks.iter().all(|block| !block.needs_translation()));
+        assert!(blocks.iter().all(|block| !block.numeric_only));
     }
 
     #[test]
