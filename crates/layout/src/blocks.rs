@@ -508,9 +508,11 @@ mod tests {
 
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].font_size, 1);
-        // The ring around a one-pixel block is that pixel, so the sampler reports no surface
-        // and the fill rule classifies it as a control. The pin is that the path returns.
-        assert_eq!(blocks[0].kind, BlockKind::Button);
+        // A one-pixel block has no ring left once the pixel itself is excluded, so the
+        // sampler reports no surface. That missing surface is within the colour tolerance
+        // of the page, so the fill rule does not call it a button. The pin is that the
+        // path returns a label rather than panicking.
+        assert_eq!(blocks[0].kind, BlockKind::Label);
     }
 
     #[test]
