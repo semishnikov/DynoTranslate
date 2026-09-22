@@ -17,7 +17,7 @@ fn run_pipeline(args: &[&str]) -> serde_json::Value {
     assert!(
         output.status.success(),
         "the soak run exited with {}: {stdout}",
-        output.status
+        output.status,
     );
     serde_json::from_str(stdout.trim()).expect("the soak report is JSON")
 }
@@ -29,22 +29,19 @@ fn a_soak_run_keeps_memory_flat() {
     assert_eq!(report["frames"], 600);
     assert!(
         report["static_frames"].as_u64().expect("static frames") > 0,
-        "the scene must have static stretches for the pass reuse to matter"
+        "the scene must have static stretches for the pass reuse to matter",
     );
 
     let memory = &report["memory"];
     let growth = memory["growth_percent"].as_f64().expect("growth percent");
     assert!(
         growth < 5.0,
-        "the plan allows under 5% growth over the soak, the run grew {growth}%"
+        "the plan allows under 5% growth over the soak, the run grew {growth}%",
     );
-    assert!(
-        memory["end_live_bytes"].as_u64().expect("end")
-            <= memory["peak_live_bytes"].as_u64().expect("peak")
-    );
+    assert!(memory["end_live_bytes"].as_u64().expect("end") <= memory["peak_live_bytes"].as_u64().expect("peak"));
     assert!(
         memory["allocations"].as_u64().expect("allocations") > 0,
-        "the run must actually allocate"
+        "the run must actually allocate",
     );
 }
 

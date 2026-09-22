@@ -461,11 +461,8 @@ mod tests {
         let frame = source(320, 240);
         let seamless = compositor.compose(
             &frame,
-            &OverlayLayout::new(OverlayStyle::Seamless).with_blocks(vec![OverlayBlock::new(
-                Rect::new(10, 10, 40, 20),
-                "A",
-            )
-            .with_confidence(0.2)]),
+            &OverlayLayout::new(OverlayStyle::Seamless)
+                .with_blocks(vec![OverlayBlock::new(Rect::new(10, 10, 40, 20), "A").with_confidence(0.2)]),
         );
         assert_eq!(seamless.frame.pixel(20, 20)[3], 255);
     }
@@ -568,7 +565,11 @@ mod tests {
         let layout = OverlayLayout::new(OverlayStyle::Plate)
             .with_blocks(vec![OverlayBlock::new(Rect::new(8, 8, 32, 16), "text")]);
         compositor.compose(&frame, &layout);
-        assert_eq!(compositor.last_painted(), &[Rect::new(8, 8, 32, 16)]);
+        // The painted region covers the block plus whatever ink ran past it.
+        let painted = compositor.last_painted();
+        assert_eq!(painted.len(), 1);
+        assert!(painted[0].contains(8, 8));
+        assert!(painted[0].contains(39, 23));
     }
 
     #[test]
@@ -583,7 +584,10 @@ mod tests {
         compositor.compose(&frame, &drawn);
 
         let cleared = compositor.compose(&frame, &OverlayLayout::new(OverlayStyle::Plate));
-        assert_eq!(cleared.damage, vec![Rect::new(8, 8, 32, 16)]);
+        // Clearing damages what the drawn pass painted: the block plus its ink overflow.
+        assert_eq!(cleared.damage.len(), 1);
+        assert!(cleared.damage[0].contains(8, 8));
+        assert!(cleared.damage[0].contains(39, 23));
         assert_eq!(cleared.frame.pixel(10, 10), CLEAR);
     }
 

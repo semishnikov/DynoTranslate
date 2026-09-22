@@ -14,7 +14,7 @@ fn run_chaos(args: &[&str]) -> serde_json::Value {
     assert!(
         output.status.success(),
         "the chaos run exited with {}: {stdout}",
-        output.status
+        output.status,
     );
     serde_json::from_str(stdout.trim()).expect("the chaos report is JSON")
 }
@@ -27,21 +27,21 @@ fn the_pipeline_fails_open_under_injected_faults() {
     let faults = &report["faults"];
     assert!(
         faults["read_errors"].as_u64().expect("read errors") > 0,
-        "the fault plan must hit a transient read error"
+        "the fault plan must hit a transient read error",
     );
     assert!(
         faults["target_lost"].as_u64().expect("target lost") > 0,
-        "the fault plan must lose the window"
+        "the fault plan must lose the window",
     );
     assert!(
         faults["engine_errors"].as_u64().expect("engine errors") > 0,
-        "the fault plan must hit the translation engine"
+        "the fault plan must hit the translation engine",
     );
     // Every lost window clears the overlay, and only a lost window does.
     assert_eq!(
         report["cleared_frames"].as_u64().expect("cleared"),
         faults["target_lost"].as_u64().expect("target lost"),
-        "the overlay clears exactly when the window is lost"
+        "the overlay clears exactly when the window is lost",
     );
     assert_eq!(report["panics"], 0);
 }

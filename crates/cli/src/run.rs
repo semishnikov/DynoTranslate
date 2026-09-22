@@ -703,11 +703,7 @@ fn observations_of(blocks: &[Block]) -> Vec<Observation> {
 
 /// Asks the engine for every stable block that still needs a translation and files the answer
 /// against the track, so the next frame reuses it instead of calling again.
-fn translate_pending(
-    engine: &mut dyn TranslationEngine,
-    stability: &mut StabilityTracker,
-    source_language: Language,
-) {
+fn translate_pending(engine: &mut dyn TranslationEngine, stability: &mut StabilityTracker, source_language: Language) {
     let pending: Vec<String> = stability
         .tracks()
         .iter()
