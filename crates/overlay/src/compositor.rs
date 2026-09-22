@@ -598,7 +598,10 @@ mod tests {
         ]);
 
         let composition = compositor.compose(&frame, &layout);
-        assert!(composition.frame.as_bytes().iter().all(|byte| *byte == 0), "nothing was drawn");
+        assert!(
+            composition.frame.as_bytes().iter().all(|byte| *byte == 0),
+            "nothing was drawn",
+        );
         assert!(compositor.last_painted().is_empty());
     }
 }

@@ -248,7 +248,10 @@ mod tests {
         assert_eq!(options.soak_frames, Some(600));
         assert_eq!(options.chaos_frames, None);
         assert_eq!(options.seed, 7);
-        assert!(options.scene.is_none(), "a soak run does not fall back to the menu scene");
+        assert!(
+            options.scene.is_none(),
+            "a soak run does not fall back to the menu scene",
+        );
 
         let options = parse_args(&["--chaos", "400", "--no-reuse"]).unwrap().unwrap();
         assert_eq!(options.chaos_frames, Some(400));

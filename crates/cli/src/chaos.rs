@@ -14,8 +14,7 @@ use lumen_capture::CaptureSource;
 use lumen_ocr::OcrError;
 use lumen_source::{ReadRequest, SourceError, SourceKind, TextRun, TextSource};
 use lumen_translate::{
-    EngineKind, StubTranslationEngine, TranslationEngine, TranslationError, TranslationRequest,
-    TranslationResponse,
+    EngineKind, StubTranslationEngine, TranslationEngine, TranslationError, TranslationRequest, TranslationResponse,
 };
 use serde::Serialize;
 

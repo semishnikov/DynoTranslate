@@ -19,6 +19,10 @@ pub fn pipeline_binary() -> PathBuf {
         .expect("the test binary sits in target/<profile>/deps");
     let name = if cfg!(windows) { "lumen-pipeline.exe" } else { "lumen-pipeline" };
     let path = profile_dir.join(name);
-    assert!(path.is_file(), "the pipeline binary was not built at {}", path.display());
+    assert!(
+        path.is_file(),
+        "the pipeline binary was not built at {}",
+        path.display(),
+    );
     path
 }

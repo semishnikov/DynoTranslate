@@ -157,7 +157,16 @@ pub struct PassRunner {
 
 impl PassRunner {
     pub fn new(params: PassParams) -> Self {
-        let PassParams { width, height, tile, style, speed, config, source, engine } = params;
+        let PassParams {
+            width,
+            height,
+            tile,
+            style,
+            speed,
+            config,
+            source,
+            engine,
+        } = params;
         Self {
             detector: ChangeDetector::new(tile),
             scheduler: CaptureScheduler::new(SchedulerConfig {
@@ -287,7 +296,11 @@ impl PassRunner {
         self.read_calls += 1;
         let read = {
             let source = self.source.as_mut().expect("run_text_pass is called for a text source");
-            source.read(&ReadRequest { frame, target: &self.target, regions: &regions })
+            source.read(&ReadRequest {
+                frame,
+                target: &self.target,
+                regions: &regions,
+            })
         };
         let fresh = match read {
             Ok(runs) => runs,
@@ -376,7 +389,8 @@ impl PassRunner {
         // the layout stands and no changed region touches what the overlay already drew.
         let layout_stands = self.state.as_ref().and_then(|state| state.layout.as_ref()) == Some(&layout);
         let source_touched_overlay = change.regions.iter().any(|region| {
-            self.compositor.last_painted().iter().any(|painted| painted.intersects(region))
+            let painted = self.compositor.last_painted();
+            painted.iter().any(|area| area.intersects(region))
         });
         let compose_skipped = self.config.reuse_previous && layout_stands && !source_touched_overlay;
 
@@ -1058,7 +1072,7 @@ mod tests {
         assert!(!regions.is_empty(), "a changed frame must read its changed regions");
         let whole_frame = Rect::new(0, 0, 640, 480);
         let read_area: u64 = regions.iter().map(|region| region.area()).sum();
-        assert!(read_area < whole_frame.area() / 2, "the menu is a third of the screen");
+        assert!(read_area < whole_frame.area() / 2, "menu is a third of the screen");
     }
 
     /// Drives the menu scene to the end and returns what each frame showed, what the overlay
@@ -1066,7 +1080,11 @@ mod tests {
     fn drive_menu_scene(reuse_previous: bool) -> (Vec<(Vec<BlockRecord>, Language)>, Vec<u8>, usize) {
         let scene = Scene::menu_appearing(640, 480);
         let mut capture = SyntheticSource::new(scene.clone());
-        let mut runner = runner_for_scene(scene, PassConfig { reuse_previous, ..PassConfig::default() });
+        let config = PassConfig {
+            reuse_previous,
+            ..PassConfig::default()
+        };
+        let mut runner = runner_for_scene(scene, config);
         let mut per_frame = Vec::new();
         while let Some(frame) = capture.next_frame().expect("a scene frame") {
             let outcome = runner.run_frame(&frame).expect("the pass runs");
@@ -1093,7 +1111,10 @@ mod tests {
         // The overlay ends up holding the same pixels either way: reuse is an optimisation,
         // not a different pipeline. It is also allowed to read less, but never more.
         assert_eq!(reused_surface, full_surface, "the overlay ends up different");
-        assert!(reused_reads <= full_reads, "reuse read {reused_reads} passes, the full path read {full_reads}");
+        assert!(
+            reused_reads <= full_reads,
+            "reuse read {reused_reads} passes, the full path read {full_reads}",
+        );
     }
 
     #[test]
@@ -1113,10 +1134,13 @@ mod tests {
         // worst frame, on any machine. The absolute ceilings are wide on purpose: they budget
         // the portable stages on a build agent, not the reference machine, and they stop a
         // regression from landing silently.
-        assert!(totals.skipped_frames > 0, "the menu scene must have static stretches: {totals:?}");
+        assert!(
+            totals.skipped_frames > 0,
+            "the menu scene must have static stretches: {totals:?}",
+        );
         assert!(
             totals.static_pass_micros_p95 <= totals.detect_micros_max,
-            "a skipped frame must cost at most the detection of the worst frame: {totals:?}"
+            "a skipped frame must cost at most the detection of the worst frame: {totals:?}",
         );
         assert!(totals.changed_pass_micros_p95 <= 500_000, "{totals:?}");
         assert!(totals.read_micros_p95 <= 200_000, "{totals:?}");
@@ -1188,7 +1212,7 @@ mod tests {
                 assert!(
                     outcome.blocks.iter().any(|block| block.text.contains("Настройки")),
                     "frame {index}: {:?}",
-                    outcome.blocks
+                    outcome.blocks,
                 );
             }
         }
@@ -1197,7 +1221,10 @@ mod tests {
         runner.advance_source();
         assert!(cleared.cleared, "the third read reports the window as gone");
         assert!(cleared.blocks.is_empty());
-        assert!(runner.surface().frame().as_bytes().iter().all(|byte| *byte == 0), "the overlay is removed");
+        assert!(
+            runner.surface().frame().as_bytes().iter().all(|byte| *byte == 0),
+            "the overlay is removed",
+        );
 
         // The window is back, and the overlay comes back with the whole menu, not only the
         // region that changed: a fail-open clear invalidates the pass state.
@@ -1205,7 +1232,15 @@ mod tests {
         let outcome = runner.run_frame(&frame).expect("the pass runs");
         runner.advance_source();
         assert!(!outcome.cleared);
-        assert!(outcome.blocks.iter().any(|block| block.text.contains("Настройки")), "{:?}", outcome.blocks);
-        assert!(outcome.blocks.iter().any(|block| block.text.contains("Удерживайте")), "{:?}", outcome.blocks);
+        assert!(
+            outcome.blocks.iter().any(|block| block.text.contains("Настройки")),
+            "{:?}",
+            outcome.blocks,
+        );
+        assert!(
+            outcome.blocks.iter().any(|block| block.text.contains("Удерживайте")),
+            "{:?}",
+            outcome.blocks,
+        );
     }
 }
