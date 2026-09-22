@@ -1,10 +1,12 @@
 //! Fail-open under scripted faults: the overlay clears exactly when the window is lost,
 //! survives every other failure, and the run never panics.
 
+mod common;
+
 use std::process::Command;
 
 fn run_chaos(args: &[&str]) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_LUMEN_PIPELINE"))
+    let output = Command::new(common::pipeline_binary())
         .args(args)
         .output()
         .expect("the pipeline binary is built by cargo");
@@ -46,8 +48,9 @@ fn the_pipeline_fails_open_under_injected_faults() {
 
 #[test]
 fn the_chaos_run_is_deterministic_for_a_seed() {
-    let first = run_chaos(&["--chaos", "200", "--seed", "5", "--width", "480", "--height", "360"]);
-    let second = run_chaos(&["--chaos", "200", "--seed", "5", "--width", "480", "--height", "360"]);
+    let args: &[&str] = &["--chaos", "200", "--seed", "5", "--width", "480", "--height", "360"];
+    let first = run_chaos(args);
+    let second = run_chaos(args);
 
     assert_eq!(first["faults"], second["faults"]);
     assert_eq!(first["cleared_frames"], second["cleared_frames"]);

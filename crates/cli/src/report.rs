@@ -34,7 +34,7 @@ pub struct FrameRecord {
     pub overlay_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockRecord {
     pub rect: Rect,
     pub text: String,

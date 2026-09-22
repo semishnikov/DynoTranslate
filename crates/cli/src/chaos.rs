@@ -14,11 +14,7 @@ use lumen_capture::CaptureSource;
 use lumen_ocr::OcrError;
 use lumen_source::{ReadRequest, SourceError, SourceKind, TextRun, TextSource};
 use lumen_translate::{
-    EngineKind,
-    StubTranslationEngine,
-    TranslationEngine,
-    TranslationError,
-    TranslationRequest,
+    EngineKind, StubTranslationEngine, TranslationEngine, TranslationError, TranslationRequest,
     TranslationResponse,
 };
 use serde::Serialize;
@@ -114,10 +110,7 @@ struct FaultyEngine {
 }
 
 impl TranslationEngine for FaultyEngine {
-    fn translate(
-        &mut self,
-        request: &TranslationRequest,
-    ) -> Result<TranslationResponse, TranslationError> {
+    fn translate(&mut self, request: &TranslationRequest) -> Result<TranslationResponse, TranslationError> {
         self.calls += 1;
         if self.calls % self.plan.every_engine_error == 0 {
             self.counters.engine_errors.fetch_add(1, Ordering::Relaxed);

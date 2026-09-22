@@ -157,16 +157,7 @@ pub struct PassRunner {
 
 impl PassRunner {
     pub fn new(params: PassParams) -> Self {
-        let PassParams {
-            width,
-            height,
-            tile,
-            style,
-            speed,
-            config,
-            source,
-            engine,
-        } = params;
+        let PassParams { width, height, tile, style, speed, config, source, engine } = params;
         Self {
             detector: ChangeDetector::new(tile),
             scheduler: CaptureScheduler::new(SchedulerConfig {
@@ -296,11 +287,7 @@ impl PassRunner {
         self.read_calls += 1;
         let read = {
             let source = self.source.as_mut().expect("run_text_pass is called for a text source");
-            source.read(&ReadRequest {
-                frame,
-                target: &self.target,
-                regions: &regions,
-            })
+            source.read(&ReadRequest { frame, target: &self.target, regions: &regions })
         };
         let fresh = match read {
             Ok(runs) => runs,
@@ -389,10 +376,7 @@ impl PassRunner {
         // the layout stands and no changed region touches what the overlay already drew.
         let layout_stands = self.state.as_ref().and_then(|state| state.layout.as_ref()) == Some(&layout);
         let source_touched_overlay = change.regions.iter().any(|region| {
-            self.compositor
-                .last_painted()
-                .iter()
-                .any(|painted| painted.intersects(region))
+            self.compositor.last_painted().iter().any(|painted| painted.intersects(region))
         });
         let compose_skipped = self.config.reuse_previous && layout_stands && !source_touched_overlay;
 
@@ -640,6 +624,31 @@ fn build_report(
         .map(|record| record.pass_micros)
         .collect();
 
+    let totals = Totals {
+        frames: records.len(),
+        static_frames,
+        skipped_frames: records.iter().filter(|record| record.skipped).count(),
+        cleared_frames: records.iter().filter(|record| record.cleared).count(),
+        read_error_frames: records.iter().filter(|record| record.read_error).count(),
+        presented_pixels,
+        full_surface_pixels,
+        presentation_savings: if full_surface_pixels == 0 {
+            0.0
+        } else {
+            1.0 - presented_pixels as f32 / full_surface_pixels as f32
+        },
+        detect_micros_p50: percentile(detect, 0.5),
+        detect_micros_max: detect.iter().copied().max().unwrap_or(0),
+        compose_micros_p50: percentile(compose, 0.5),
+        compose_micros_max: compose.iter().copied().max().unwrap_or(0),
+        pass_micros_p50: percentile(pass, 0.5),
+        pass_micros_p95: percentile(pass, 0.95),
+        static_pass_micros_p95: percentile(static_pass, 0.95),
+        changed_pass_micros_p95: percentile(changed_pass, 0.95),
+        read_micros_p95: percentile(read, 0.95),
+        stage_micros_p95: percentile(stage, 0.95),
+    };
+
     Report {
         source: source_name.to_owned(),
         width,
@@ -648,30 +657,7 @@ fn build_report(
         style: options.style,
         language: runner.final_language(),
         frames: records,
-        totals: Totals {
-            frames: records.len(),
-            static_frames,
-            skipped_frames: records.iter().filter(|record| record.skipped).count(),
-            cleared_frames: records.iter().filter(|record| record.cleared).count(),
-            read_error_frames: records.iter().filter(|record| record.read_error).count(),
-            presented_pixels,
-            full_surface_pixels,
-            presentation_savings: if full_surface_pixels == 0 {
-                0.0
-            } else {
-                1.0 - presented_pixels as f32 / full_surface_pixels as f32
-            },
-            detect_micros_p50: percentile(detect, 0.5),
-            detect_micros_max: detect.iter().copied().max().unwrap_or(0),
-            compose_micros_p50: percentile(compose, 0.5),
-            compose_micros_max: compose.iter().copied().max().unwrap_or(0),
-            pass_micros_p50: percentile(pass, 0.5),
-            pass_micros_p95: percentile(pass, 0.95),
-            static_pass_micros_p95: percentile(static_pass, 0.95),
-            changed_pass_micros_p95: percentile(changed_pass, 0.95),
-            read_micros_p95: percentile(read, 0.95),
-            stage_micros_p95: percentile(stage, 0.95),
-        },
+        totals,
     }
 }
 
@@ -695,8 +681,8 @@ fn observations_of(blocks: &[Block]) -> Vec<Observation> {
 
 /// Asks the engine for every stable block that still needs a translation and files the answer
 /// against the track, so the next frame reuses it instead of calling again.
-fn translate_pending<E: TranslationEngine>(
-    engine: &mut E,
+fn translate_pending(
+    engine: &mut dyn TranslationEngine,
     stability: &mut StabilityTracker,
     source_language: Language,
 ) {
@@ -1076,10 +1062,7 @@ mod tests {
     fn drive_menu_scene(reuse_previous: bool) -> (Vec<(Vec<BlockRecord>, Language)>, Vec<u8>, usize) {
         let scene = Scene::menu_appearing(640, 480);
         let mut capture = SyntheticSource::new(scene.clone());
-        let mut runner = runner_for_scene(scene, PassConfig {
-            reuse_previous,
-            ..PassConfig::default()
-        });
+        let mut runner = runner_for_scene(scene, PassConfig { reuse_previous, ..PassConfig::default() });
         let mut per_frame = Vec::new();
         while let Some(frame) = capture.next_frame().expect("a scene frame") {
             let outcome = runner.run_frame(&frame).expect("the pass runs");
@@ -1106,10 +1089,7 @@ mod tests {
         // The overlay ends up holding the same pixels either way: reuse is an optimisation,
         // not a different pipeline. It is also allowed to read less, but never more.
         assert_eq!(reused_surface, full_surface, "the overlay ends up different");
-        assert!(
-            reused_reads <= full_reads,
-            "reuse read {reused_reads} passes, the full path read {full_reads}"
-        );
+        assert!(reused_reads <= full_reads, "reuse read {reused_reads} passes, the full path read {full_reads}");
     }
 
     #[test]
@@ -1213,10 +1193,7 @@ mod tests {
         runner.advance_source();
         assert!(cleared.cleared, "the third read reports the window as gone");
         assert!(cleared.blocks.is_empty());
-        assert!(
-            runner.surface().frame().as_bytes().iter().all(|byte| *byte == 0),
-            "the overlay is removed"
-        );
+        assert!(runner.surface().frame().as_bytes().iter().all(|byte| *byte == 0), "the overlay is removed");
 
         // The window is back, and the overlay comes back with the whole menu, not only the
         // region that changed: a fail-open clear invalidates the pass state.
@@ -1224,15 +1201,7 @@ mod tests {
         let outcome = runner.run_frame(&frame).expect("the pass runs");
         runner.advance_source();
         assert!(!outcome.cleared);
-        assert!(
-            outcome.blocks.iter().any(|block| block.text.contains("Настройки")),
-            "{:?}",
-            outcome.blocks
-        );
-        assert!(
-            outcome.blocks.iter().any(|block| block.text.contains("Удерживайте")),
-            "{:?}",
-            outcome.blocks
-        );
+        assert!(outcome.blocks.iter().any(|block| block.text.contains("Настройки")), "{:?}", outcome.blocks);
+        assert!(outcome.blocks.iter().any(|block| block.text.contains("Удерживайте")), "{:?}", outcome.blocks);
     }
 }
