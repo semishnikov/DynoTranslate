@@ -109,15 +109,7 @@ pub fn draw_line(
 /// Blends one capsule into the frame and reports the box of the pixels whose bytes it changed.
 /// Measuring the change rather than the coverage keeps the ground-truth box honest: a pixel that
 /// rounds back to what it already was did not receive ink, whatever the coverage arithmetic said.
-fn paint_segment(
-    frame: &mut Frame,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-    radius: f32,
-    color: [u8; 4],
-) -> Option<Rect> {
+fn paint_segment(frame: &mut Frame, x0: f32, y0: f32, x1: f32, y1: f32, radius: f32, color: [u8; 4]) -> Option<Rect> {
     let reach = radius + 0.75;
     let left = ((x0.min(x1) - reach).floor() as i64).max(0) as u32;
     let top = ((y0.min(y1) - reach).floor() as i64).max(0) as u32;
