@@ -106,6 +106,44 @@ jobs:
       # the failure reporter below. Tagged releases go through tauri-action instead: it
       # assembles the updater JSON and the draft release, and the owner rehearses that
       # path on a machine where the action logs are readable.
+      # The translation runtime is downloaded while the shell compiles. Copy it into the
+      # resource folder before bundling so the installer contains it even if the bundle
+      # hook is the only other chance to do so.
+      - name: Build the translation runtime
+        working-directory: app
+        run: |
+          set +e
+          npm run build > frontend-build.txt 2>&1
+          code=$?
+          if [ "$code" != 0 ]; then
+            sed 's/\x1b\[[0-9;]*m//g' frontend-build.txt | tail -n 20 | while IFS= read -r line; do
+              printf '::error title=frontend-build::%s\n' "${line//'%'/'%25'}"
+            done
+            exit "$code"
+          fi
+          (cd src-tauri && cargo build --release) > runtime-build.txt 2>&1
+          code=$?
+          if [ "$code" != 0 ]; then
+            sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt | tail -n 30 | while IFS= read -r line; do
+              printf '::error title=runtime-build::%s\n' "${line//'%'/'%25'}"
+            done
+            exit "$code"
+          fi
+          set -e
+          mkdir -p src-tauri/resources
+          if [ ! -f src-tauri/target/release/onnxruntime.dll ]; then
+            echo "::error title=runtime-build::onnxruntime.dll was not next to the built program"
+            find src-tauri/target/release -maxdepth 1 -name '*.dll' -print | while IFS= read -r line; do
+              printf '::error title=runtime-dll::%s\n' "$line"
+            done
+            exit 1
+          fi
+          cp -f src-tauri/target/release/onnxruntime.dll src-tauri/resources/onnxruntime.dll
+          if [ -f src-tauri/target/release/DirectML.dll ]; then
+            cp -f src-tauri/target/release/DirectML.dll src-tauri/resources/DirectML.dll
+          fi
+          ls -l src-tauri/resources
+
       - name: Build the installer
         if: github.ref_type != 'tag'
         working-directory: app

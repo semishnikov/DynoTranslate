@@ -31,8 +31,11 @@ pub fn run(bundled: Option<PathBuf>) {
 
 fn loop_forever(bundled: Option<PathBuf>) {
     let _ = log("live loop started");
+    init_winrt();
     let mut paused = false;
-    let _ = register_pause_hotkey();
+    if let Err(error) = register_pause_hotkey() {
+        let _ = log(&format!("pause hotkey: {error}"));
+    }
 
     let mut status = StatusOverlay::new();
     status.show("Скачиваю модель перевода. Это один раз, дальше без интернета.");
@@ -160,7 +163,11 @@ fn loop_forever(bundled: Option<PathBuf>) {
             continue;
         }
 
-        if overlay.as_ref().is_none_or(|surface| surface.size() != (bounds.width, bounds.height)) {
+        let resized = match overlay.as_ref() {
+            None => true,
+            Some(surface) => surface.size() != (bounds.width, bounds.height),
+        };
+        if resized {
             overlay = LayeredOverlay::create(bounds).ok();
         } else if let Some(surface) = overlay.as_mut() {
             if surface.move_to(bounds).is_err() {
@@ -186,7 +193,7 @@ fn foreground_other_process() -> Option<isize> {
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
     let hwnd = unsafe { GetForegroundWindow() };
-    if hwnd.0.is_null() {
+    if hwnd.0.is_null() || is_overlay_class(hwnd) {
         return None;
     }
     let mut process = 0u32;
@@ -198,8 +205,26 @@ fn foreground_other_process() -> Option<isize> {
 }
 
 fn register_pause_hotkey() -> windows::core::Result<()> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, VK_T};
-    unsafe { RegisterHotKey(None, 1, MOD_ALT, VK_T.0 as u32) }
+    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_NOREPEAT, RegisterHotKey, VK_T};
+    unsafe { RegisterHotKey(None, 1, MOD_ALT | MOD_NOREPEAT, VK_T.0 as u32) }
+}
+
+fn init_winrt() {
+    use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
+    if let Err(error) = unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
+        let _ = log(&format!("winrt init: {error}"));
+    }
+}
+
+fn is_overlay_class(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::GetClassNameW;
+    let mut buffer = [0u16; 64];
+    let written = unsafe { GetClassNameW(hwnd, &mut buffer) };
+    if written <= 0 {
+        return false;
+    }
+    let name = String::from_utf16_lossy(&buffer[..written as usize]);
+    name == "LumenOverlaySurface"
 }
 
 fn pump(paused: &mut bool) {

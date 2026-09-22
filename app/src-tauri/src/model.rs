@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use ndarray::{Array2, Array3};
 use ort::session::Session;
+use ort::value::Tensor;
 use tokenizers::Tokenizer;
 
 const ENCODER_URL: &str =
@@ -75,52 +76,53 @@ impl Translator {
         let length = ids.len();
         let input_ids = Array2::from_shape_vec((1, length), ids).map_err(|error| error.to_string())?;
         let mask = Array2::from_elem((1, length), 1i64);
+        let ids_tensor = Tensor::from_array(input_ids).map_err(|error| error.to_string())?;
+        let mask_tensor = Tensor::from_array(mask.clone()).map_err(|error| error.to_string())?;
 
         let encoded = self
             .encoder
             .run(ort::inputs![
-                "input_ids" => input_ids,
-                "attention_mask" => mask.clone(),
+                "input_ids" => ids_tensor,
+                "attention_mask" => mask_tensor,
             ])
             .map_err(|error| format!("encoder run: {error}"))?;
-        let hidden = encoded["last_hidden_state"]
-            .try_extract_array::<f32>()
-            .map_err(|error| format!("encoder output: {error}"))?;
-        let hidden_shape = hidden.shape().to_vec();
+        let hidden_view = output_f32(&encoded, "hidden")?;
+        let hidden_shape = hidden_view.shape().to_vec();
         if hidden_shape.len() != 3 {
             return Err(format!("encoder rank {}", hidden_shape.len()));
         }
         let hidden = Array3::from_shape_vec(
             (hidden_shape[0], hidden_shape[1], hidden_shape[2]),
-            hidden.iter().copied().collect(),
+            hidden_view.iter().copied().collect(),
         )
         .map_err(|error| error.to_string())?;
+        drop(encoded);
 
         let mut generated = vec![DECODER_START];
         for _ in 0..MAX_NEW_TOKENS {
             let step = Array2::from_shape_vec((1, generated.len()), generated.clone())
                 .map_err(|error| error.to_string())?;
+            let step_tensor = Tensor::from_array(step).map_err(|error| error.to_string())?;
+            let hidden_tensor = Tensor::from_array(hidden.clone()).map_err(|error| error.to_string())?;
+            let mask_tensor = Tensor::from_array(mask.clone()).map_err(|error| error.to_string())?;
             let decoded = self
                 .decoder
                 .run(ort::inputs![
-                    "input_ids" => step,
-                    "encoder_hidden_states" => hidden.clone(),
-                    "encoder_attention_mask" => mask.clone(),
+                    "input_ids" => step_tensor,
+                    "encoder_hidden_states" => hidden_tensor,
+                    "encoder_attention_mask" => mask_tensor,
                 ])
                 .map_err(|error| format!("decoder run: {error}"))?;
-            let logits = decoded["logits"]
-                .try_extract_array::<f32>()
-                .map_err(|error| format!("decoder output: {error}"))?;
+            let logits = output_f32(&decoded, "logits")?;
             let shape = logits.shape();
             if shape.len() != 3 || shape[2] == 0 {
                 return Err("decoder logits have an unexpected shape".to_owned());
             }
             let vocab = shape[2];
             let last = (shape[1] - 1) * vocab;
-            let row = logits.iter().skip(last).take(vocab);
             let mut best = 0usize;
             let mut best_score = f32::NEG_INFINITY;
-            for (index, score) in row.enumerate() {
+            for (index, score) in logits.iter().skip(last).take(vocab).enumerate() {
                 if index as i64 == DECODER_START {
                     continue;
                 }
@@ -147,14 +149,30 @@ impl Translator {
     }
 }
 
-trait JoinComma {
-    fn join_comma(&self) -> String;
+fn input_names(session: &Session) -> String {
+    session
+        .inputs()
+        .iter()
+        .map(|input| input.name())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
-impl JoinComma for std::iter::Map<std::slice::Iter<'_, ort::session::Input>, fn(&ort::session::Input) -> &str> {
-    fn join_comma(&self) -> String {
-        String::new()
-    }
+fn output_f32<'a>(
+    outputs: &'a ort::session::SessionOutputs<'_>,
+    needle: &str,
+) -> Result<ndarray::ArrayViewD<'a, f32>, String> {
+    let names: Vec<String> = outputs.iter().map(|(name, _)| name.to_owned()).collect();
+    let name = names
+        .iter()
+        .find(|name| name.contains(needle))
+        .or_else(|| names.first())
+        .ok_or_else(|| "model returned no outputs".to_owned())?;
+    outputs
+        .get(name.as_str())
+        .ok_or_else(|| format!("missing output {name}"))?
+        .try_extract_array::<f32>()
+        .map_err(|error| format!("{name}: {error}"))
 }
 
 fn model_dir(bundled: Option<&Path>) -> Result<PathBuf, String> {
@@ -179,17 +197,31 @@ fn ensure(dir: &Path, name: &str, url: &str, minimum: u64, log: &mut dyn Write) 
     }
     let _ = writeln!(log, "downloading {name}");
     let partial = dir.join(format!("{name}.partial"));
+    if let Err(error) = download(url, &partial) {
+        let _ = fs::remove_file(&partial);
+        return Err(format!("download {name}: {error}"));
+    }
+    if !file_ok(&partial, minimum) {
+        let _ = fs::remove_file(&partial);
+        return Err(format!("{name} download was too small to be the model"));
+    }
+    fs::rename(&partial, &path).map_err(|error| error.to_string())?;
+    Ok(path)
+}
+
+fn download(url: &str, path: &Path) -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(20))
         .timeout_read(Duration::from_secs(180))
+        .redirects(10)
         .build();
     let response = agent
         .get(url)
         .set("User-Agent", "DynoTranslate")
         .call()
-        .map_err(|error| format!("download {name}: {error}"))?;
+        .map_err(|error| error.to_string())?;
     let mut reader = response.into_reader();
-    let mut file = File::create(&partial).map_err(|error| error.to_string())?;
+    let mut file = File::create(path).map_err(|error| error.to_string())?;
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = reader.read(&mut buffer).map_err(|error| error.to_string())?;
@@ -198,14 +230,7 @@ fn ensure(dir: &Path, name: &str, url: &str, minimum: u64, log: &mut dyn Write) 
         }
         file.write_all(&buffer[..read]).map_err(|error| error.to_string())?;
     }
-    file.flush().map_err(|error| error.to_string())?;
-    drop(file);
-    if !file_ok(&partial, minimum) {
-        let _ = fs::remove_file(&partial);
-        return Err(format!("{name} download was too small to be the model"));
-    }
-    fs::rename(&partial, &path).map_err(|error| error.to_string())?;
-    Ok(path)
+    file.flush().map_err(|error| error.to_string())
 }
 
 fn file_ok(path: &Path, minimum: u64) -> bool {

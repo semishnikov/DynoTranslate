@@ -3,11 +3,16 @@
 //! A Russian Windows install usually still reads Latin letters with its own pack.
 
 use lumen_core::{Frame, Rect};
+use windows::Globalization::Language;
+use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
+use windows::Media::Ocr::OcrEngine as WinOcr;
+use windows::Storage::Streams::DataWriter;
+use windows::core::HSTRING;
 
 use crate::{OcrEngine, OcrError, Recognition};
 
 pub struct WindowsOcr {
-    engine: windows::Media::Ocr::OcrEngine,
+    engine: WinOcr,
 }
 
 impl WindowsOcr {
@@ -58,60 +63,48 @@ impl OcrEngine for WindowsOcr {
     }
 }
 
-fn create_engine() -> Result<windows::Media::Ocr::OcrEngine, String> {
-    use windows::Globalization::Language;
-    use windows::Media::Ocr::OcrEngine;
-    use windows::core::HSTRING;
-
+fn create_engine() -> Result<WinOcr, String> {
     for tag in ["en-US", "en"] {
-        let language = Language::CreateLanguage(&HSTRING::from(tag)).map_err(|error| error.message())?;
-        if OcrEngine::IsLanguageSupported(&language).unwrap_or(false) {
-            return OcrEngine::TryCreateFromLanguage(&language).map_err(|error| error.message());
+        let language = Language::CreateLanguage(&HSTRING::from(tag)).map_err(message)?;
+        if WinOcr::IsLanguageSupported(&language).unwrap_or(false) {
+            return WinOcr::TryCreateFromLanguage(&language).map_err(message);
         }
     }
-    OcrEngine::TryCreateFromUserProfileLanguages().map_err(|error| error.message())
+    WinOcr::TryCreateFromUserProfileLanguages().map_err(message)
 }
 
-fn recognise_crop(
-    engine: &windows::Media::Ocr::OcrEngine,
-    frame: &Frame,
-) -> Result<Vec<Recognition>, String> {
-    use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
-    use windows::Storage::Streams::DataWriter;
-
-    let writer = DataWriter::new().map_err(|error| error.message())?;
-    writer
-        .WriteBytes(frame.as_bytes())
-        .map_err(|error| error.message())?;
-    let buffer = writer.DetachBuffer().map_err(|error| error.message())?;
+fn recognise_crop(engine: &WinOcr, frame: &Frame) -> Result<Vec<Recognition>, String> {
+    let writer = DataWriter::new().map_err(message)?;
+    writer.WriteBytes(frame.as_bytes()).map_err(message)?;
+    let buffer = writer.DetachBuffer().map_err(message)?;
     let bitmap = SoftwareBitmap::CreateCopyFromBuffer(
         &buffer,
         BitmapPixelFormat::Bgra8,
         frame.width() as i32,
         frame.height() as i32,
-        BitmapAlphaMode::Ignore,
     )
-    .map_err(|error| error.message())?;
+    .map_err(message)?;
 
     let result = engine
         .RecognizeAsync(&bitmap)
-        .map_err(|error| error.message())?
+        .map_err(message)?
         .get()
-        .map_err(|error| error.message())?;
-    let lines = result.Lines().map_err(|error| error.message())?;
+        .map_err(message)?;
+    let lines = result.Lines().map_err(message)?;
     let mut recognised = Vec::new();
-    for index in 0..lines.Size().map_err(|error| error.message())? {
-        let line = lines.GetAt(index).map_err(|error| error.message())?;
-        let text = line.Text().map_err(|error| error.message())?.to_string();
-        let words = line.Words().map_err(|error| error.message())?;
+    let line_count = lines.Size().map_err(message)?;
+    for index in 0..line_count {
+        let line = lines.GetAt(index).map_err(message)?;
+        let text = line.Text().map_err(message)?.to_string();
+        let words = line.Words().map_err(message)?;
         let mut left = i32::MAX;
         let mut top = i32::MAX;
         let mut right = 0i32;
         let mut bottom = 0i32;
-        let count = words.Size().map_err(|error| error.message())?;
+        let count = words.Size().map_err(message)?;
         for word_index in 0..count {
-            let word = words.GetAt(word_index).map_err(|error| error.message())?;
-            let bounds = word.BoundingRect().map_err(|error| error.message())?;
+            let word = words.GetAt(word_index).map_err(message)?;
+            let bounds = word.BoundingRect().map_err(message)?;
             left = left.min(bounds.X.floor() as i32);
             top = top.min(bounds.Y.floor() as i32);
             right = right.max((bounds.X + bounds.Width).ceil() as i32);
@@ -129,4 +122,8 @@ fn recognise_crop(
         });
     }
     Ok(recognised)
+}
+
+fn message(error: windows::core::Error) -> String {
+    error.message()
 }

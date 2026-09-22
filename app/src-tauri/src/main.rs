@@ -69,6 +69,29 @@ fn set_shell_settings(
     current.clone()
 }
 
+fn point_at_runtime(app: &tauri::App) {
+    let mut dirs = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        dirs.push(dir);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dirs.push(dir.to_path_buf());
+        }
+    }
+    for dir in dirs {
+        let directml = dir.join("DirectML.dll");
+        if directml.is_file() {
+            let _ = ort::util::preload_dylib(&directml);
+        }
+        let runtime = dir.join("onnxruntime.dll");
+        if runtime.is_file() {
+            std::env::set_var("ORT_DYLIB_PATH", runtime);
+            return;
+        }
+    }
+}
+
 fn main() {
     // The repository is private, so the updater authenticates its release downloads with
     // a read-only token baked in at build time (release.yml sets UPDATER_PAT from a
@@ -86,6 +109,15 @@ fn main() {
         .plugin(updater.build())
         .plugin(tauri_plugin_process::init())
         .manage(std::sync::Mutex::new(ShellSettings::default()))
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.minimize();
+            }
+            point_at_runtime(app);
+            let bundled = app.path().resource_dir().ok();
+            std::thread::spawn(move || live::run(bundled));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![ping, get_shell_settings, set_shell_settings])
         .run(tauri::generate_context!())
         .expect("error while running Lumen shell");

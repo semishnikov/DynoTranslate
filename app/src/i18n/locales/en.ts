@@ -1,6 +1,6 @@
 /** English source locale. Keys are the contract; other locales fall back here. */
 export const en = {
-  "app.name": "Lumen",
+  "app.name": "DynoTranslate",
   "app.tagline": "Screen localization",
   "app.version": "Version 1.0.0",
   "app.offline": "Runs offline · no account",
@@ -13,8 +13,8 @@ export const en = {
   "nav.skip": "Skip to main content",
 
   "toast.regionSaved": "Overlay region saved.",
-  "toast.profilesExported": "Profiles exported to Documents/Lumen.",
-  "toast.upToDate": "Lumen is up to date.",
+  "toast.profilesExported": "Profiles exported to Documents/DynoTranslate.",
+  "toast.upToDate": "DynoTranslate is up to date.",
   "toast.packInstalled": "Language pack installed.",
   "toast.packRemoved": "Language pack removed.",
   "toast.settingsReset": "Settings restored to recommended values.",
@@ -22,7 +22,7 @@ export const en = {
 
   "home.title": "Overview",
   "home.blurb":
-    "Lumen watches the window you are using, reads the text it shows and draws the translation in place. It never reads game memory and never injects code.",
+    "DynoTranslate watches the window you are using, reads the text it shows and draws the translation in place. It never reads game memory and never injects code.",
   "home.power": "Translation",
   "home.on": "Translation is on",
   "home.off": "Translation is off",
@@ -58,7 +58,7 @@ export const en = {
 
   "apps.title": "Apps",
   "apps.blurb":
-    "Profiles appear on their own the first time Lumen sees an app. Change one only if you want something different from the default.",
+    "Profiles appear on their own the first time DynoTranslate sees an app. Change one only if you want something different from the default.",
   "apps.find": "Find an app",
   "apps.export": "Export profiles",
   "apps.translate": "Translate {name}",
@@ -66,7 +66,7 @@ export const en = {
   "apps.target": "Target language",
   "apps.empty": "No profile matches “{query}”. Start an app and it will show up here.",
   "apps.antiCheat":
-    "{name} protects this game. Lumen only reads the picture the system already shows, so nothing is injected into the game process.",
+    "{name} protects this game. DynoTranslate only reads the picture the system already shows, so nothing is injected into the game process.",
 
   "packs.title": "Languages",
   "packs.blurb":
@@ -82,18 +82,18 @@ export const en = {
   "settings.title": "Settings",
   "settings.blurb": "Every change applies immediately. Nothing here needs to be confirmed.",
   "settings.general": "General",
-  "settings.general.description": "How Lumen behaves around the rest of your system.",
+  "settings.general.description": "How DynoTranslate behaves around the rest of your system.",
   "settings.reset": "Reset to recommended",
   "settings.autostart": "Start with Windows",
-  "settings.autostart.hint": "Lumen starts minimised in the notification area.",
+  "settings.autostart.hint": "DynoTranslate starts minimised in the notification area.",
   "settings.pausePasswords": "Pause on password fields",
   "settings.pausePasswords.hint": "Capture stops for password boxes, the sign-in screen and UAC prompts.",
   "settings.offlineOnly": "Work offline only",
   "settings.offlineOnly.hint": "Only local language packs are used. No text ever leaves this computer.",
   "settings.tray": "Notification area",
-  "settings.tray.description": "What the tray icon does while Lumen runs in the background.",
+  "settings.tray.description": "What the tray icon does while DynoTranslate runs in the background.",
   "settings.tray.minimise": "Minimise to tray on close",
-  "settings.tray.minimise.hint": "Closing the window keeps Lumen running. Open it again from the tray.",
+  "settings.tray.minimise.hint": "Closing the window keeps DynoTranslate running. Open it again from the tray.",
   "settings.tray.notify": "Notify when a pack finishes",
   "settings.tray.notify.hint": "A balloon appears when a download completes or fails.",
   "settings.tray.quickToggle": "Tray click toggles the overlay",
@@ -102,7 +102,7 @@ export const en = {
   "settings.hotkeys.description": "Global shortcuts work while the game has focus.",
   "settings.hotkeys.enabled": "Enable global hotkeys",
   "settings.hotkeys.enabled.hint": "Alt+T toggles the overlay; Alt+Q shows the original text while held.",
-  "settings.hotkeys.list": "Alt+T overlay · Alt+Q original · Alt+Shift+O open Lumen",
+  "settings.hotkeys.list": "Alt+T overlay · Alt+Q original · Alt+Shift+O open DynoTranslate",
   "settings.appearance": "Appearance",
   "settings.appearance.description": "How the overlay and the app itself look.",
   "settings.theme": "Theme",
@@ -116,7 +116,7 @@ export const en = {
   "settings.uiScale": "Interface scale",
   "settings.animationOff": "Off",
   "settings.performance": "Performance",
-  "settings.performance.description": "Lumen slows itself down when the game needs the hardware.",
+  "settings.performance.description": "DynoTranslate slows itself down when the game needs the hardware.",
   "settings.resourceCap": "Resource limit",
   "settings.resource.light": "Light",
   "settings.resource.balanced": "Balanced",
@@ -138,7 +138,7 @@ export const en = {
 
   "region.title": "Region",
   "region.blurb":
-    "Draw the area of the window Lumen should watch. Everything outside it is ignored, which keeps capture cost low and password fields out of frame.",
+    "Draw the area of the window DynoTranslate should watch. Everything outside it is ignored, which keeps capture cost low and password fields out of frame.",
   "region.editor": "Overlay region editor",
   "region.hint": "Drag the handles, or use the arrow keys after focusing the region.",
   "region.x": "Left",
@@ -157,7 +157,7 @@ export const en = {
   "onboarding.back": "Back",
   "onboarding.finish": "Finish setup",
   "onboarding.step": "Step {current} of {total}",
-  "onboarding.welcome.title": "Welcome to Lumen",
+  "onboarding.welcome.title": "Welcome to DynoTranslate",
   "onboarding.welcome.body":
     "In the next minute you will pick a language, install one pack and choose how much of the window to watch. Nothing leaves this computer unless you turn that on later.",
   "onboarding.welcome.point1": "Reads only what the screen already shows — no memory, no injection.",
@@ -177,10 +177,10 @@ export const en = {
   "onboarding.region.custom": "Custom region",
   "onboarding.done.title": "You are ready",
   "onboarding.done.body":
-    "Alt+T turns the overlay on and off. Hold Alt+Q to peek at the original text. Open Lumen any time from the tray.",
+    "Alt+T turns the overlay on and off. Hold Alt+Q to peek at the original text. Open DynoTranslate any time from the tray.",
 
   "hotkey.hint": "Alt+T overlay · Alt+Q original · Alt+Shift+O open",
-  "hotkey.toggleUnavailable": "Global hotkeys need the desktop shell; open Lumen from the tray.",
+  "hotkey.toggleUnavailable": "Global hotkeys need the desktop shell; open DynoTranslate from the tray.",
 } as const;
 
 export type MessageKey = keyof typeof en;

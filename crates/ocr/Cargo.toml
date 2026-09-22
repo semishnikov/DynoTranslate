@@ -16,6 +16,7 @@ thiserror = { workspace = true }
 version = "0.58"
 features = [
     "Foundation",
+    "Foundation_Collections",
     "Globalization",
     "Graphics_Imaging",
     "Media_Ocr",
