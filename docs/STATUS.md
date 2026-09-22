@@ -8,6 +8,10 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Done
 
+- **M4.** Portable renderer (fitting, inpainting, bundled faces), temporal stability, stroke-weight
+  estimation, RTL/vertical writing modes, visual regression suite, ADR 0006, and the pipeline
+  wired through stability + stub translation. Green on all three jobs (CI run 35728755276) and
+  merged as PR #9; `main` is at `b4573a9`.
 - **M3.** Token protection, translation memory and cache, offline pack manager, glossary and the
   fallback engine stack. Green on all three jobs (CI run 35718597892) and merged as PR #8;
   `main` is at `8fd881a`.
@@ -126,9 +130,9 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Next
 
-1. **Land M4** (this branch): the portable renderer with fitting, inpainting and bundled faces;
-   temporal stability; weight estimation in layout; the visual regression suite; ADR 0006.
-   CI green on all three jobs (run 35728755276); the pull request is marked ready for review.
+1. **Land M5** (PR #10): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
+   i18n and the accessibility audit. Interface + both Rust jobs green on CI run 35731085910;
+   PR marked ready for review.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
@@ -143,7 +147,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 5. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
 6. Text effects beyond weight (outline detection from the source pixels), which layout still
    leaves alone.
-7. M5: Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n, accessibility.
+7. M6: Performance tuning, edge cases, chaos and soak runs, updater, installer.
+8. M7: Release: signed installer, winget manifest, QA report, manual test plan.
 
 ## Known limitations
 

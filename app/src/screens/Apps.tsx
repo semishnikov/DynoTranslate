@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Card, LanguageCombobox, Segmented, Toggle } from "../components/controls";
 import { languages } from "../data/catalog";
 import type { OverlayStyle } from "../data/catalog";
+import { useT } from "../i18n";
 import { useStore } from "../state/store";
 import "./apps.css";
 
 export function Apps() {
+  const t = useT();
   const profiles = useStore((state) => state.profiles);
   const toggleProfile = useStore((state) => state.toggleProfile);
   const updateProfile = useStore((state) => state.updateProfile);
@@ -20,20 +22,24 @@ export function Apps() {
   return (
     <div className="page">
       <header className="page__head">
-        <h1>Apps</h1>
-        <p>Profiles appear on their own the first time Lumen sees an app. Change one only if you want something different from the default.</p>
+        <h1>{t("apps.title")}</h1>
+        <p>{t("apps.blurb")}</p>
       </header>
 
       <div className="apps__toolbar">
         <input
           className="apps__search"
           value={query}
-          placeholder="Find an app"
-          aria-label="Find an app"
+          placeholder={t("apps.find")}
+          aria-label={t("apps.find")}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <button type="button" className="ghost-button" onClick={() => notify("Profiles exported to Documents/Lumen.")}>
-          Export profiles
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => notify(t("toast.profilesExported"))}
+        >
+          {t("apps.export")}
         </button>
       </div>
 
@@ -58,7 +64,7 @@ export function Apps() {
                   </span>
                 </button>
                 <Toggle
-                  label={`Translate ${profile.name}`}
+                  label={t("apps.translate", { name: profile.name })}
                   checked={profile.enabled}
                   onChange={() => toggleProfile(profile.id)}
                 />
@@ -67,34 +73,33 @@ export function Apps() {
               {open ? (
                 <div className="app-row__details">
                   <LanguageCombobox
-                    label="Source language"
+                    label={t("apps.source")}
                     value={profile.source}
                     options={languages}
                     onChange={(value) => updateProfile(profile.id, { source: value })}
                   />
                   <LanguageCombobox
-                    label="Target language"
+                    label={t("apps.target")}
                     value={profile.target}
                     options={languages}
                     onChange={(value) => updateProfile(profile.id, { target: value })}
                   />
                   <div className="app-row__style">
-                    <span className="quick__label">Overlay style</span>
+                    <span className="quick__label">{t("home.style")}</span>
                     <Segmented<OverlayStyle>
-                      label="Overlay style"
+                      label={t("home.style")}
                       value={profile.style}
                       options={[
-                        { value: "seamless", label: "Seamless" },
-                        { value: "plate", label: "Plate" },
-                        { value: "subtitles", label: "Subtitles" },
+                        { value: "seamless", label: t("style.seamless") },
+                        { value: "plate", label: t("style.plate") },
+                        { value: "subtitles", label: t("style.subtitles") },
                       ]}
                       onChange={(value) => updateProfile(profile.id, { style: value })}
                     />
                   </div>
                   {profile.antiCheat ? (
                     <p className="app-row__notice">
-                      {profile.antiCheat} protects this game. Lumen only reads the picture the system already shows, so
-                      nothing is injected into the game process.
+                      {t("apps.antiCheat", { name: profile.antiCheat })}
                     </p>
                   ) : null}
                 </div>
@@ -104,7 +109,7 @@ export function Apps() {
         })}
         {visible.length === 0 ? (
           <Card>
-            <p className="empty">No profile matches “{query}”. Start an app and it will show up here.</p>
+            <p className="empty">{t("apps.empty", { query })}</p>
           </Card>
         ) : null}
       </div>

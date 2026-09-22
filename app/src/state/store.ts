@@ -1,8 +1,14 @@
 import { create } from "zustand";
 import { packs as initialPacks, profiles as initialProfiles } from "../data/catalog";
 import type { AppProfile, LanguagePack, OverlayStyle, Responsiveness } from "../data/catalog";
+import type { LocaleCode } from "../i18n";
 
 export type Theme = "dark" | "light";
+
+/** Overlay watch area in percentages of the window (0–100), so DPI never matters. */
+export type RegionRect = { x: number; y: number; w: number; h: number };
+
+export const DEFAULT_REGION: RegionRect = { x: 0, y: 0, w: 100, h: 100 };
 
 type Settings = {
   targetLanguage: string;
@@ -18,6 +24,14 @@ type Settings = {
   offlineOnly: boolean;
   pauseOnPasswordFields: boolean;
   theme: Theme;
+  interfaceLanguage: LocaleCode;
+  trayMinimise: boolean;
+  trayNotify: boolean;
+  trayQuickToggle: boolean;
+  hotkeysEnabled: boolean;
+  onboardingDone: boolean;
+  region: RegionRect;
+  draftRegion: RegionRect;
 };
 
 const recommended: Settings = {
@@ -34,6 +48,14 @@ const recommended: Settings = {
   offlineOnly: true,
   pauseOnPasswordFields: true,
   theme: "dark",
+  interfaceLanguage: "ru",
+  trayMinimise: true,
+  trayNotify: true,
+  trayQuickToggle: true,
+  hotkeysEnabled: true,
+  onboardingDone: false,
+  region: { ...DEFAULT_REGION },
+  draftRegion: { ...DEFAULT_REGION },
 };
 
 type Store = Settings & {
@@ -49,16 +71,27 @@ type Store = Settings & {
   installPack: (id: string) => void;
   removePack: (id: string) => void;
   notify: (message: string | null) => void;
+  completeOnboarding: () => void;
+  skipOnboarding: () => void;
+  setDraftRegion: (region: RegionRect) => void;
+  applyDraftRegion: () => void;
+  saveRegion: () => void;
 };
 
-export const useStore = create<Store>((set) => ({
+export const useStore = create<Store>((set, get) => ({
   ...recommended,
   running: true,
   profiles: initialProfiles,
   packs: initialPacks,
   toast: null,
   set: (key, value) => set({ [key]: value } as Partial<Store>),
-  reset: () => set({ ...recommended, toast: "Settings restored to recommended values." }),
+  reset: () =>
+    set({
+      ...recommended,
+      // Keep onboarding state; the caller raises a localized toast.
+      onboardingDone: get().onboardingDone,
+      toast: null,
+    }),
   toggleRunning: () => set((state) => ({ running: !state.running })),
   toggleProfile: (id) =>
     set((state) => ({
@@ -73,14 +106,17 @@ export const useStore = create<Store>((set) => ({
   installPack: (id) =>
     set((state) => ({
       packs: state.packs.map((pack) => (pack.id === id ? { ...pack, state: "installed", progress: undefined } : pack)),
-      toast: "Language pack installed.",
     })),
   removePack: (id) =>
     set((state) => ({
       packs: state.packs.map((pack) => (pack.id === id ? { ...pack, state: "available", progress: undefined } : pack)),
-      toast: "Language pack removed.",
     })),
   notify: (message) => set({ toast: message }),
+  completeOnboarding: () => set({ onboardingDone: true, running: true }),
+  skipOnboarding: () => set({ onboardingDone: true }),
+  setDraftRegion: (region) => set({ draftRegion: region }),
+  applyDraftRegion: () => set({ region: { ...get().draftRegion } }),
+  saveRegion: () => set((state) => ({ region: { ...state.draftRegion } })),
 }));
 
 export const currentProfile = (profiles: AppProfile[]) =>

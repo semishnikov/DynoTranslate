@@ -1,66 +1,124 @@
 import { Card, Segmented, Slider, Toggle } from "../components/controls";
+import { localeOptions, useT } from "../i18n";
 import { useStore } from "../state/store";
 import type { Theme } from "../state/store";
+import type { LocaleCode } from "../i18n";
 
 export function Settings() {
+  const t = useT();
   const state = useStore();
 
   return (
     <div className="page">
       <header className="page__head">
-        <h1>Settings</h1>
-        <p>Every change applies immediately. Nothing here needs to be confirmed.</p>
+        <h1>{t("settings.title")}</h1>
+        <p>{t("settings.blurb")}</p>
       </header>
 
       <Card
-        title="General"
-        description="How Lumen behaves around the rest of your system."
+        title={t("settings.general")}
+        description={t("settings.general.description")}
         action={
-          <button type="button" className="ghost-button" onClick={state.reset}>
-            Reset to recommended
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => {
+              state.reset();
+              state.notify(t("toast.settingsReset"));
+            }}
+          >
+            {t("settings.reset")}
           </button>
         }
       >
+        <div className="field">
+          <div className="field__text">
+            <span className="field__label">{t("settings.interfaceLang")}</span>
+            <p className="field__hint">{t("settings.interfaceLang.hint")}</p>
+          </div>
+          <div style={{ width: 240 }}>
+            <Segmented<LocaleCode>
+              label={t("settings.interfaceLang")}
+              value={state.interfaceLanguage}
+              options={localeOptions.map((option) => ({
+                value: option.value,
+                label: option.native,
+              }))}
+              onChange={(value) => state.set("interfaceLanguage", value)}
+            />
+          </div>
+        </div>
         <Toggle
-          label="Start with Windows"
-          description="Lumen starts minimised in the notification area."
+          label={t("settings.autostart")}
+          description={t("settings.autostart.hint")}
           checked={state.autostart}
           onChange={(value) => state.set("autostart", value)}
         />
         <Toggle
-          label="Pause on password fields"
-          description="Capture stops for password boxes, the sign-in screen and UAC prompts."
+          label={t("settings.pausePasswords")}
+          description={t("settings.pausePasswords.hint")}
           checked={state.pauseOnPasswordFields}
           onChange={(value) => state.set("pauseOnPasswordFields", value)}
         />
         <Toggle
-          label="Work offline only"
-          description="Only local language packs are used. No text ever leaves this computer."
+          label={t("settings.offlineOnly")}
+          description={t("settings.offlineOnly.hint")}
           checked={state.offlineOnly}
           onChange={(value) => state.set("offlineOnly", value)}
         />
       </Card>
 
-      <Card title="Appearance" description="How the overlay and the app itself look.">
+      <Card title={t("settings.tray")} description={t("settings.tray.description")}>
+        <Toggle
+          label={t("settings.tray.minimise")}
+          description={t("settings.tray.minimise.hint")}
+          checked={state.trayMinimise}
+          onChange={(value) => state.set("trayMinimise", value)}
+        />
+        <Toggle
+          label={t("settings.tray.notify")}
+          description={t("settings.tray.notify.hint")}
+          checked={state.trayNotify}
+          onChange={(value) => state.set("trayNotify", value)}
+        />
+        <Toggle
+          label={t("settings.tray.quickToggle")}
+          description={t("settings.tray.quickToggle.hint")}
+          checked={state.trayQuickToggle}
+          onChange={(value) => state.set("trayQuickToggle", value)}
+        />
+      </Card>
+
+      <Card title={t("settings.hotkeys")} description={t("settings.hotkeys.description")}>
+        <Toggle
+          label={t("settings.hotkeys.enabled")}
+          description={t("settings.hotkeys.enabled.hint")}
+          checked={state.hotkeysEnabled}
+          onChange={(value) => state.set("hotkeysEnabled", value)}
+        />
+        <p className="field__hint">{t("settings.hotkeys.list")}</p>
+      </Card>
+
+      <Card title={t("settings.appearance")} description={t("settings.appearance.description")}>
         <div className="field">
           <div className="field__text">
-            <span className="field__label">Theme</span>
-            <p className="field__hint">Follows the system by default.</p>
+            <span className="field__label">{t("settings.theme")}</span>
+            <p className="field__hint">{t("settings.theme.hint")}</p>
           </div>
           <div style={{ width: 240 }}>
             <Segmented<Theme>
-              label="Theme"
+              label={t("settings.theme")}
               value={state.theme}
               options={[
-                { value: "dark", label: "Dark" },
-                { value: "light", label: "Light" },
+                { value: "dark", label: t("settings.theme.dark") },
+                { value: "light", label: t("settings.theme.light") },
               ]}
               onChange={(value) => state.set("theme", value)}
             />
           </div>
         </div>
         <Slider
-          label="Overlay opacity"
+          label={t("settings.overlayOpacity")}
           value={state.overlayOpacity}
           min={40}
           max={100}
@@ -68,7 +126,7 @@ export function Settings() {
           onChange={(value) => state.set("overlayOpacity", value)}
         />
         <Slider
-          label="Text scale"
+          label={t("settings.textScale")}
           value={state.textScale}
           min={80}
           max={140}
@@ -76,7 +134,7 @@ export function Settings() {
           onChange={(value) => state.set("textScale", value)}
         />
         <Slider
-          label="Edge softness"
+          label={t("settings.edgeSoftness")}
           value={state.edgeSoftness}
           min={0}
           max={100}
@@ -84,15 +142,15 @@ export function Settings() {
           onChange={(value) => state.set("edgeSoftness", value)}
         />
         <Slider
-          label="Animation speed"
+          label={t("settings.animationSpeed")}
           value={state.animationSpeed}
           min={0}
           max={150}
-          format={(value) => (value === 0 ? "Off" : `${value}%`)}
+          format={(value) => (value === 0 ? t("settings.animationOff") : `${value}%`)}
           onChange={(value) => state.set("animationSpeed", value)}
         />
         <Slider
-          label="Interface scale"
+          label={t("settings.uiScale")}
           value={state.uiScale}
           min={100}
           max={200}
@@ -102,25 +160,35 @@ export function Settings() {
         />
       </Card>
 
-      <Card title="Performance" description="Lumen slows itself down when the game needs the hardware.">
+      <Card title={t("settings.performance")} description={t("settings.performance.description")}>
         <Slider
-          label="Resource limit"
+          label={t("settings.resourceCap")}
           value={state.resourceCap}
           min={20}
           max={100}
-          format={(value) => (value <= 40 ? "Light" : value <= 75 ? "Balanced" : "Full speed")}
+          format={(value) =>
+            value <= 40
+              ? t("settings.resource.light")
+              : value <= 75
+                ? t("settings.resource.balanced")
+                : t("settings.resource.full")
+          }
           onChange={(value) => state.set("resourceCap", value)}
         />
       </Card>
 
-      <Card title="About">
+      <Card title={t("settings.about")}>
         <div className="field">
           <div className="field__text">
-            <span className="field__label">Lumen 1.0.0</span>
-            <p className="field__hint">Offline translation engine · language packs 2026.03</p>
+            <span className="field__label">{t("app.name")} 1.0.0</span>
+            <p className="field__hint">{t("settings.about.meta")}</p>
           </div>
-          <button type="button" className="ghost-button" onClick={() => state.notify("Lumen is up to date.")}>
-            Check for updates
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => state.notify(t("toast.upToDate"))}
+          >
+            {t("settings.about.check")}
           </button>
         </div>
       </Card>
