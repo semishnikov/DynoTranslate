@@ -61,7 +61,7 @@ impl DialogueContext {
         self.turns.push(ContextTurn {
             speaker: speaker.map(|s| s.trim().to_owned()),
             source: src_norm,
-            translated: translated.map(|t| crate::token::normalize(t)),
+            translated: translated.map(crate::token::normalize),
         });
     }
 

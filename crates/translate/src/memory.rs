@@ -116,12 +116,10 @@ impl TranslationMemory {
             return;
         }
 
-        if self.entries.len() >= self.capacity {
-            if !self.access_order.is_empty() {
-                let oldest = self.access_order.remove(0);
-                self.entries.remove(&oldest);
-                self.stats.evictions += 1;
-            }
+        if self.entries.len() >= self.capacity && !self.access_order.is_empty() {
+            let oldest = self.access_order.remove(0);
+            self.entries.remove(&oldest);
+            self.stats.evictions += 1;
         }
 
         self.access_order.push(key.clone());

@@ -8,9 +8,7 @@
 use lumen_language::Language;
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{
-    EngineKind, TranslationEngine, TranslationError, TranslationRequest, TranslationResponse,
-};
+use crate::engine::{EngineKind, TranslationEngine, TranslationError, TranslationRequest, TranslationResponse};
 
 /// Operating state of the circuit breaker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,6 +220,6 @@ mod tests {
 
         // Advance past cooldown -> enters HalfOpen
         fallback.advance_time(5_001);
-        assert_eq!(fallback.circuit_breaker_mut().allow_request(5_001), true);
+        assert!(fallback.circuit_breaker_mut().allow_request(5_001));
     }
 }

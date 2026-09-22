@@ -61,7 +61,7 @@ impl Glossary {
                 case_sensitive,
             });
             // Keep entries sorted by length descending so longer terms match first
-            self.entries.sort_by(|a, b| b.source.len().cmp(&a.source.len()));
+            self.entries.sort_by_key(|e| std::cmp::Reverse(e.source.len()));
         }
         self.version = self.version.wrapping_add(1);
     }
