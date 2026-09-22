@@ -119,14 +119,12 @@ where
     let max_height = spec.max_height as f32;
 
     let mut size = preferred;
-    let mut last = (0.0_f32, 0_u32);
     let mut measure = measure;
     // Five-percent steps reach the floor from the preferred size in a handful of iterations;
     // the cap is a guard against a non-monotonic measure function looping forever.
     for _ in 0..64 {
         let line_height = (size * 1.2).ceil().max(1.0);
-        last = measure(&spec.text, size);
-        let (widest, lines) = last;
+        let (widest, lines) = measure(&spec.text, size);
         let height = lines as f32 * line_height;
         if widest <= max_width && height <= max_height {
             return Ok(fitted(size, line_height, false, preferred));

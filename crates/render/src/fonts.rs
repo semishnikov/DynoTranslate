@@ -18,7 +18,7 @@ pub enum FontLibraryError {
 
 /// The bundled font files, in load order. Later faces do not shadow earlier ones: each file
 /// registers its own family, weight and style for the matcher to choose from.
-const BUNDLED: &[(&'static str, &[u8])] = &[
+const BUNDLED: &[(&str, &[u8])] = &[
     ("DejaVuSans.ttf", include_bytes!("../fonts/DejaVuSans.ttf")),
     (
         "DejaVuSans-Bold.ttf",

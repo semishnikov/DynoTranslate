@@ -8,8 +8,8 @@
 use std::collections::HashSet;
 
 use cosmic_text::{
-    Align, Attrs, Buffer, Ellipsize, Family, FontSystem, Metrics, PhysicalGlyph, Shaping, Style,
-    SwashCache, Weight, Wrap,
+    Align, Attrs, Buffer, Ellipsize, Family, Metrics, PhysicalGlyph, Shaping, Style, SwashCache,
+    Weight, Wrap,
 };
 use lumen_core::{Frame, Rect};
 use serde::{Deserialize, Serialize};
@@ -145,7 +145,6 @@ impl Renderer {
         // stamping pass, and collecting ends the buffer borrow before drawing begins.
         let mut stamps: Vec<(PhysicalGlyph, [u8; 4], i32, i32)> = Vec::new();
         {
-            let font_system = self.library.system();
             for run in buffer.layout_runs() {
                 let column = if vertical { run.line_i / per_column.max(1) } else { 0 };
                 let column_x = if vertical {

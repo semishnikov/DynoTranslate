@@ -14,9 +14,7 @@ use lumen_overlay::{FontWeight, OverlayBlock, OverlayLayout, TextAlign};
 use lumen_render::writing_mode_of;
 use lumen_source::{merge, MergePolicy, ReadRequest, TextRun, TextSource, TextTarget};
 use lumen_stability::{Observation, StabilityConfig, StabilityTracker, StableBlock};
-use lumen_translate::{
-    StubTranslationEngine, TranslateItem, TranslationEngine, TranslationRequest,
-};
+use lumen_translate::{StubTranslationEngine, TranslateItem, TranslationEngine, TranslationRequest};
 
 use crate::report::{percentile, BlockRecord, FrameRecord, Report, Totals};
 use crate::source::SceneTextSource;

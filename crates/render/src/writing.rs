@@ -15,20 +15,15 @@ pub enum Direction {
 }
 
 /// How lines are arranged inside the box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WritingMode {
     /// Lines stack top to bottom, reading across.
+    #[default]
     Horizontal,
     /// Characters stack top to bottom in a column; columns run right to left, which is how
     /// vertical Japanese and Chinese interface text is set.
     Vertical,
-}
-
-impl Default for WritingMode {
-    fn default() -> Self {
-        WritingMode::Horizontal
-    }
 }
 
 /// Direction implied by the characters themselves. Arabic and Hebrew reverse the base
