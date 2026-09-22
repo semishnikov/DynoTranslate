@@ -7,7 +7,11 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod live;
+mod model;
+
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 /// Mirror of the React `RegionRect` (percent of the window).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

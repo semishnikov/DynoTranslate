@@ -11,15 +11,15 @@ use lumen_core::{Frame, Rect};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC,
-    SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits, PrintWindow,
+    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
 };
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible,
+    IsWindowVisible, PRINT_WINDOW_FLAGS,
 };
 
 use crate::{CaptureError, CaptureSource, CaptureTarget};
@@ -233,6 +233,106 @@ impl DesktopCopySource {
 
         Frame::packed(bounds.width, bounds.height, pixels).map_err(CaptureError::from)
     }
+}
+
+/// The window's own picture. An overlay drawn on top is not included. Exclusive fullscreen
+/// often comes back black; the caller then hides its overlay and uses [`capture_window_screen`].
+pub fn capture_window_picture(handle: isize) -> Result<(Frame, Rect), CaptureError> {
+    let hwnd = HWND(handle as *mut c_void);
+    let bounds = window_bounds(hwnd).ok_or(CaptureError::TargetLost)?;
+    let frame = print_window(hwnd, bounds.width, bounds.height)?;
+    if mostly_black(&frame) {
+        return Err(CaptureError::Platform {
+            operation: "PrintWindow",
+            detail: "the window rendered an empty frame".to_owned(),
+        });
+    }
+    Ok((frame, bounds))
+}
+
+/// A copy of the screen where the window sits. Includes anything drawn on top, so the caller
+/// hides its overlay before calling.
+pub fn capture_window_screen(handle: isize) -> Result<(Frame, Rect), CaptureError> {
+    let hwnd = HWND(handle as *mut c_void);
+    let bounds = window_bounds(hwnd).ok_or(CaptureError::TargetLost)?;
+    let mut source = DesktopCopySource::new(CaptureTarget {
+        id: handle as u64,
+        title: window_title(hwnd),
+        process: String::new(),
+        bounds,
+    });
+    let frame = source.next_frame()?.ok_or(CaptureError::TargetLost)?;
+    Ok((frame, source.target().bounds))
+}
+
+fn print_window(hwnd: HWND, width: u32, height: u32) -> Result<Frame, CaptureError> {
+    let screen = ScreenContext::acquire()?;
+    let memory = MemoryContext::compatible_with(&screen, width, height)?;
+    let printed = unsafe { PrintWindow(hwnd, memory.dc, PRINT_WINDOW_FLAGS(2)) };
+    if !printed.as_bool() {
+        return Err(CaptureError::Platform {
+            operation: "PrintWindow",
+            detail: "the window declined to render".to_owned(),
+        });
+    }
+    read_bitmap(&memory, width, height)
+}
+
+fn read_bitmap(memory: &MemoryContext, width: u32, height: u32) -> Result<Frame, CaptureError> {
+    let mut info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width as i32,
+            biHeight: -(height as i32),
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut pixels = vec![0u8; width as usize * height as usize * 4];
+    let copied = unsafe {
+        GetDIBits(
+            memory.dc,
+            memory.bitmap,
+            0,
+            height,
+            Some(pixels.as_mut_ptr() as *mut c_void),
+            &mut info,
+            DIB_RGB_COLORS,
+        )
+    };
+    if copied == 0 {
+        return Err(CaptureError::Platform {
+            operation: "GetDIBits",
+            detail: "the device context returned no scan lines".to_owned(),
+        });
+    }
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel[3] = 255;
+    }
+    Frame::packed(width, height, pixels).map_err(CaptureError::from)
+}
+
+fn mostly_black(frame: &Frame) -> bool {
+    let mut dark = 0u32;
+    let mut seen = 0u32;
+    let step = (frame.width() / 32).max(1);
+    let mut y = 0;
+    while y < frame.height() {
+        let mut x = 0;
+        while x < frame.width() {
+            let pixel = frame.pixel(x, y);
+            seen += 1;
+            if pixel[0] < 12 && pixel[1] < 12 && pixel[2] < 12 {
+                dark += 1;
+            }
+            x += step;
+        }
+        y += step;
+    }
+    seen > 0 && dark * 100 / seen > 92
 }
 
 impl CaptureSource for DesktopCopySource {
