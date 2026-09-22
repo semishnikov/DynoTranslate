@@ -364,7 +364,7 @@ impl PassRunner {
         let analysed = analyse(frame, merged, &self.layout_config);
         let observations = observations_of(&analysed);
         self.stability.observe(&observations, &self.stability_config);
-        translate_pending(&mut self.engine, &mut self.stability, language);
+        translate_pending(&mut *self.engine, &mut self.stability, language);
         let stable = self.stability.tracks().to_vec();
         let blocks = overlay_blocks_from_stable(&analysed, &stable);
         let stage_micros = stage_started.elapsed().as_micros();
@@ -637,11 +637,11 @@ fn build_report(
         } else {
             1.0 - presented_pixels as f32 / full_surface_pixels as f32
         },
-        detect_micros_p50: percentile(detect, 0.5),
+        detect_micros_p50: percentile(detect.clone(), 0.5),
         detect_micros_max: detect.iter().copied().max().unwrap_or(0),
-        compose_micros_p50: percentile(compose, 0.5),
+        compose_micros_p50: percentile(compose.clone(), 0.5),
         compose_micros_max: compose.iter().copied().max().unwrap_or(0),
-        pass_micros_p50: percentile(pass, 0.5),
+        pass_micros_p50: percentile(pass.clone(), 0.5),
         pass_micros_p95: percentile(pass, 0.95),
         static_pass_micros_p95: percentile(static_pass, 0.95),
         changed_pass_micros_p95: percentile(changed_pass, 0.95),

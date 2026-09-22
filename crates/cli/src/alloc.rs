@@ -31,7 +31,10 @@ impl CountingAllocator {
         let live = self.live_bytes.fetch_add(size, Ordering::Relaxed) + size;
         let mut peak = self.peak_bytes.load(Ordering::Relaxed);
         while live > peak {
-            match self.peak_bytes.compare_exchange_weak(peak, live, Ordering::Relaxed, Ordering::Relaxed) {
+            match self
+                .peak_bytes
+                .compare_exchange_weak(peak, live, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,
                 Err(current) => peak = current,
             }
