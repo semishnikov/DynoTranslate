@@ -57,6 +57,7 @@ crates/source/       text sources: UI Automation adapter, OCR bridge, merge
 crates/layout/       runs to lines to blocks, classified and measured
 crates/language/     script and orthographic language identification
 crates/corpus/       synthetic scene corpus, quality gate, identification scoring
+crates/translate/    token protection, translation memory, packs, glossaries, fallback
 crates/cli/          headless pipeline harness
 docs/                plan, architecture, decision records, CI workflow
 ```
