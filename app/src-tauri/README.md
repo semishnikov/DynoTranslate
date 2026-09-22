@@ -53,6 +53,11 @@ update the secret. Pull-request builds sign with an ephemeral key instead, which
 the signing path without touching the real one; a version tag without the secret fails
 loudly rather than publishing an unsigned release.
 
+`tauri build` reads that secret from `TAURI_SIGNING_PRIVATE_KEY` only — key contents, or
+a path to the key file. `TAURI_SIGNING_PRIVATE_KEY_PATH` is honoured by `tauri signer sign`
+and ignored by the bundler, so a workflow that sets only the path variable compiles and
+then aborts when updater artifacts are signed.
+
 ## Private-repository updater token
 
 This repository is private, so the updater authenticates its release downloads with a
