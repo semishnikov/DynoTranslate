@@ -60,15 +60,31 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
     the code the product will run;
   - the report lists the text each frame produced, with its box, alongside the timings.
   - A plain PNG still gets one invented block per changed region, because no engine reads an image
-    yet. 13 harness tests, one of them asserting the scene's own words reach the report.
+    yet.
+- **M2, language identification.** `lumen-language`, 1112 lines, no model and no training data:
+  - `script_of` and `dominant_script` settle the writing system from the code points, which needs
+    no evidence at all, and narrow a passage to a handful of candidates.
+  - `identify` scores the candidates on three things: letters only one of them uses, the function
+    words grammar forces into a sentence, and the menu words that appear on nearly every screen of
+    an application. It returns a language and a confidence, and `Unknown` when there is nothing to
+    go on.
+  - `Tracker` holds the answer per window and only gives it up to a rival that turns up
+    `switch_after` times running and with a real margin, so a loading screen of numbers or one
+    short button cannot flip a session. A window with no language yet takes the first real answer
+    at once — hysteresis protects an answer that exists.
+  - The pipeline feeds every pass through it and reports the language per frame and for the run.
+  - 32 tests. The limits are stated where they belong: two languages that share an alphabet and a
+    vocabulary get a low confidence rather than a confident guess, and Han on its own cannot be
+    told from kanji-only Japanese.
 
 ## Verification
 
-- CI run 35654766114 at `f28b70c` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
-  `Interface`: formatting, clippy with warnings denied, all 123 workspace tests, and the headless
+- CI run 35693060565 at `fa404bf` passes `Rust (ubuntu-latest)`, `Rust (windows-latest)` and
+  `Interface`: formatting, clippy with warnings denied, all 156 workspace tests, and the headless
   pipeline run on both platforms.
-- `lumen-layout` is portable, so every line of it is compiled, linted and tested on Linux as well
-  as on Windows. The classification thresholds are pinned by tests rather than left to judgement.
+- `lumen-layout` and `lumen-language` are portable, so every line of both is compiled, linted and
+  tested on Linux as well as on Windows. Their thresholds are pinned by tests rather than left to
+  judgement.
 - `lumen-source/src/windows.rs` compiles only on `windows-latest` and has no tests of its own: it
   needs a real desktop session. Its correctness is limited to "it type-checks and lints clean on
   Windows".
@@ -81,12 +97,11 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Next
 
-1. **M2, language identification.** Unicode script analysis first, then text-level detection, with
-   per-application stickiness and hysteresis. Not started.
-2. **M2, corpus generator.** Synthetic scenes across fonts, scripts and backgrounds with CER
-   thresholds enforced in CI. Not started.
-3. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-4. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
+1. **M2, corpus generator.** Synthetic scenes across fonts, scripts and backgrounds with CER
+   thresholds enforced in CI. Not started. The identification scoring wants the same corpus: right
+   now it is verified against synthetic phrases, not against real screens.
+2. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
+3. Font weight and text effects per block, which layout deliberately leaves to the fidelity work
    in M4.
 
 PR #6 stays a draft until the branch conflict below is decided; its build is green and the slices
@@ -97,6 +112,9 @@ it carries are complete.
 - The harness reads the whole frame on every pass, so text that stopped moving is not forgotten.
   Skipping work on unchanged tiles needs the previous pass to be reusable, which is M4.
 - Recognition of a plain PNG is still the region stand-in; no engine reads an image yet.
+- Language identification is orthography, not a trained classifier. It is exact for the script and
+  for languages with letters of their own, and a leaning for the rest. Replacing the scoring with a
+  small model is a M3 concern, once translation gives something to compare against.
 - `DesktopCopySource` is the interim capture path; the Windows Graphics Capture session replaces
   it, as recorded in ADR 0003.
 - There is no `LICENSE` file in the repository. See the open decisions in `docs/PLAN.md`.
