@@ -109,8 +109,9 @@ fn inpainting_preserves_the_horizontal_ramp() {
     let source = Frame::packed(width, 24, pixels).expect("dimensions");
     let region = Rect::new(20, 4, 24, 16);
     let out = inpaint(&source, region);
+    // Same row of the region (width 24): column 8 sits near the left halo, column 23 near the right.
     let left = out[8];
-    let right = out[8 + 23];
+    let right = out[23];
     assert!(
         u32::from(right[0]) > u32::from(left[0]) + 40,
         "reconstruction should keep the ramp: {left:?} -> {right:?}"
