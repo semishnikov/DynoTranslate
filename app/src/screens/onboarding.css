@@ -1,0 +1,106 @@
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: color-mix(in srgb, var(--bg-app) 82%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.onboarding__card {
+  width: min(520px, 100%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.onboarding__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.onboarding__step {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.onboarding__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 180px;
+}
+
+.onboarding__body h2 {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.onboarding__body > p {
+  color: var(--fg-secondary);
+}
+
+.onboarding__points {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--fg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.onboarding__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.onboarding__pack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.onboarding__pack-pair {
+  font-weight: 600;
+}
+
+.onboarding__pack-meta {
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+}
+
+.onboarding__pack-ok {
+  font-size: var(--text-sm);
+  color: var(--success-fg, var(--accent));
+}
+
+.onboarding__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding,
+  .onboarding__card {
+    transition: none !important;
+    animation: none !important;
+  }
+}

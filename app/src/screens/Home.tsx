@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, LanguageCombobox, Segmented, Toggle } from "../components/controls";
 import { languages } from "../data/catalog";
 import type { OverlayStyle, Responsiveness } from "../data/catalog";
+import { useT } from "../i18n";
 import { currentProfile, useStore } from "../state/store";
 import "./home.css";
 
@@ -13,6 +14,7 @@ const demoLines = [
 ];
 
 export function Home() {
+  const t = useT();
   const running = useStore((state) => state.running);
   const toggleRunning = useStore((state) => state.toggleRunning);
   const profiles = useStore((state) => state.profiles);
@@ -42,28 +44,25 @@ export function Home() {
   const sourceLabel = languages.find((item) => item.value === active.source)?.label ?? active.source;
   const targetLabel = languages.find((item) => item.value === targetLanguage)?.label ?? targetLanguage;
   const status = !running
-    ? "Paused. Nothing is captured."
+    ? t("home.status.paused")
     : active.enabled
-      ? `Translating ${active.name} · ${sourceLabel} → ${targetLabel}`
-      : "Waiting for a window to translate";
+      ? t("home.status.translating", { app: active.name, from: sourceLabel, to: targetLabel })
+      : t("home.status.waiting");
 
   return (
     <div className="page">
       <header className="page__head">
-        <h1>Overview</h1>
-        <p>
-          Lumen watches the window you are using, reads the text it shows and draws the translation in place. It never
-          reads game memory and never injects code.
-        </p>
+        <h1>{t("home.title")}</h1>
+        <p>{t("home.blurb")}</p>
       </header>
 
-      <section className={running ? "status status--on" : "status"}>
+      <section className={running ? "status status--on" : "status"} aria-label={t("home.power")}>
         <button
           type="button"
           className="power"
           role="switch"
           aria-checked={running}
-          aria-label="Translation"
+          aria-label={t("home.power")}
           onClick={toggleRunning}
         >
           <span className="power__ring" />
@@ -87,32 +86,32 @@ export function Home() {
           </span>
         </button>
         <div className="status__text">
-          <p className="status__title">{running ? "Translation is on" : "Translation is off"}</p>
+          <p className="status__title">{running ? t("home.on") : t("home.off")}</p>
           <p className="status__detail">{status}</p>
-          <p className="status__hint">Hold Alt+Q to see the original text. Alt+T turns the overlay on and off.</p>
+          <p className="status__hint">{t("home.hint")}</p>
         </div>
         <dl className="status__metrics">
           <div>
-            <dt>Response</dt>
+            <dt>{t("home.metric.response")}</dt>
             <dd>{running ? "186 ms" : "—"}</dd>
           </div>
           <div>
-            <dt>Cache hits</dt>
+            <dt>{t("home.metric.cache")}</dt>
             <dd>{running ? "94%" : "—"}</dd>
           </div>
           <div>
-            <dt>CPU</dt>
+            <dt>{t("home.metric.cpu")}</dt>
             <dd>{running ? "5.2%" : "0.1%"}</dd>
           </div>
         </dl>
       </section>
 
       <Card
-        title="Current window"
-        description="Each app keeps its own language pair and overlay style."
+        title={t("home.current.title")}
+        description={t("home.current.description")}
         action={
           <button type="button" className="ghost-button" onClick={() => toggleProfile(active.id)}>
-            {active.enabled ? "Exclude this app" : "Include this app"}
+            {active.enabled ? t("home.current.exclude") : t("home.current.include")}
           </button>
         }
       >
@@ -124,11 +123,11 @@ export function Home() {
             <p className="current__name">{active.name}</p>
             <p className="current__meta">
               {active.process} · {sourceLabel} → {targetLabel}
-              {active.antiCheat ? ` · ${active.antiCheat} detected` : ""}
+              {active.antiCheat ? ` · ${t("home.current.antiCheat", { name: active.antiCheat })}` : ""}
             </p>
           </div>
           <Toggle
-            label="Translate this app"
+            label={t("home.current.translate")}
             checked={active.enabled}
             onChange={() => toggleProfile(active.id)}
           />
@@ -138,34 +137,34 @@ export function Home() {
       <div className="quick">
         <Card>
           <LanguageCombobox
-            label="Translate into"
+            label={t("home.target")}
             value={targetLanguage}
             options={languages}
             onChange={(value) => set("targetLanguage", value)}
           />
         </Card>
         <Card>
-          <span className="quick__label">Speed</span>
+          <span className="quick__label">{t("home.speed")}</span>
           <Segmented<Responsiveness>
-            label="Speed"
+            label={t("home.speed")}
             value={responsiveness}
             options={[
-              { value: "fast", label: "Fast" },
-              { value: "balanced", label: "Balanced" },
-              { value: "accurate", label: "Accurate" },
+              { value: "fast", label: t("speed.fast") },
+              { value: "balanced", label: t("speed.balanced") },
+              { value: "accurate", label: t("speed.accurate") },
             ]}
             onChange={(value) => set("responsiveness", value)}
           />
         </Card>
         <Card>
-          <span className="quick__label">Overlay style</span>
+          <span className="quick__label">{t("home.style")}</span>
           <Segmented<OverlayStyle>
-            label="Overlay style"
+            label={t("home.style")}
             value={overlayStyle}
             options={[
-              { value: "seamless", label: "Seamless" },
-              { value: "plate", label: "Plate" },
-              { value: "subtitles", label: "Subtitles" },
+              { value: "seamless", label: t("style.seamless") },
+              { value: "plate", label: t("style.plate") },
+              { value: "subtitles", label: t("style.subtitles") },
             ]}
             onChange={(value) => set("overlayStyle", value)}
           />
@@ -173,8 +172,8 @@ export function Home() {
       </div>
 
       <Card
-        title="Live preview"
-        description="A sample menu in Japanese, rendered the way the overlay draws it."
+        title={t("home.preview.title")}
+        description={t("home.preview.description")}
         action={
           <button
             type="button"
@@ -183,7 +182,7 @@ export function Home() {
             onMouseUp={() => setPeeking(false)}
             onMouseLeave={() => setPeeking(false)}
           >
-            Hold to see original
+            {t("home.preview.hold")}
           </button>
         }
       >
@@ -199,7 +198,9 @@ export function Home() {
               </span>
             </div>
           ))}
-          <span className="preview__badge">{peeking ? "Original" : running ? "Translated" : "Overlay off"}</span>
+          <span className="preview__badge">
+            {peeking ? t("home.preview.original") : running ? t("home.preview.translated") : t("home.preview.off")}
+          </span>
         </div>
       </Card>
     </div>
