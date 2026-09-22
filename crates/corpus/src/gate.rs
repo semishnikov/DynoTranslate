@@ -254,7 +254,10 @@ pub fn score_identification(transcripts: &[SceneTranscript]) -> IdentificationSc
     for transcript in transcripts {
         let guess = identify(&transcript.text);
         let hit = guess.language == transcript.language;
-        match tallies.iter_mut().find(|(language, _, _)| *language == transcript.language) {
+        match tallies
+            .iter_mut()
+            .find(|(language, _, _)| *language == transcript.language)
+        {
             Some((_, scenes, hits)) => {
                 *scenes += 1;
                 *hits += usize::from(hit);
