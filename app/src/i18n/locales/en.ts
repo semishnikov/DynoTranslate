@@ -126,6 +126,15 @@ export const en = {
   "settings.about": "About",
   "settings.about.meta": "Offline translation engine · language packs 2026.03",
   "settings.about.check": "Check for updates",
+  "settings.about.checking": "Checking…",
+  "settings.about.available": "Version {version} is available.",
+  "settings.about.download": "Download and install",
+  "settings.about.downloading": "Downloading… {progress}",
+  "settings.about.ready": "Update installed. Restart to apply it.",
+  "settings.about.restart": "Restart now",
+  "settings.about.failed": "Update failed: {error}",
+  "settings.about.retry": "Try again",
+  "settings.about.unavailable": "Updates are available in the desktop app.",
 
   "region.title": "Region",
   "region.blurb":

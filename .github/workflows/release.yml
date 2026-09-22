@@ -65,6 +65,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the binary at compile time (option_env!); the updater sends it as
+          # a Bearer token so release downloads work against this private repository.
+          UPDATER_PAT: ${{ secrets.UPDATER_PAT }}
         with:
           projectPath: app
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}

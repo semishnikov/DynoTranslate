@@ -45,15 +45,22 @@ npx tauri icon src-tauri/icon-source.png -o src-tauri/icons
 
 ## Signing updates
 
-Releases are signed with a minisign keypair the owner generates once:
+Releases are signed with a minisign keypair whose public half lives in the
+`plugins.updater.pubkey` field of `tauri.conf.json`. The private half is stored as the
+`TAURI_SIGNING_PRIVATE_KEY` repository secret and never enters the repository. To rotate
+the keypair, run `npx tauri signer generate` from `app/`, replace the config field, and
+update the secret. Pull-request builds sign with an ephemeral key instead, which proves
+the signing path without touching the real one; a version tag without the secret fails
+loudly rather than publishing an unsigned release.
 
-```sh
-# from app/
-npx tauri signer generate -w ~/.tauri/lumen.key
-```
+## Private-repository updater token
 
-The public key goes into the `plugins.updater.pubkey` field of `tauri.conf.json`; the
-private key is stored as the `TAURI_SIGNING_PRIVATE_KEY` repository secret and never enters
-the repository. Pull-request builds sign with an ephemeral key instead, which proves the
-signing path without touching the real one; a version tag without the secret fails loudly
-rather than publishing an unsigned release.
+This repository is private, so the updater authenticates its release downloads with a
+read-only token baked into the binary at build time (`option_env!("UPDATER_PAT")` in
+`src/main.rs`, sent as a Bearer header). Create a fine-grained personal access token with
+Contents read-only access to this repository, no expiry where the platform allows it, and
+store it as the `UPDATER_PAT` repository secret. The token is extractable from the binary
+by anyone who can already read the releases, so keep its scope minimal; rotating it takes
+effect in the next built release. Builds without the secret (fork pull requests, local
+checks) ship an updater that reports its download failure in the Settings UI instead of
+crashing.

@@ -157,16 +157,26 @@ What the continuation session did, oldest first:
   to exactly 72 characters (inclusive) and break above it; a single argument uses the full
   width; `fn` signatures join while the whole line fits 120; match-arm tuples stay vertical.
 
-Not in the branch: the updater and the installer from the M6 row exist nowhere in code, and no
-spec for either was found in `docs/`. They need owner decisions (update server, signing keys,
-product name) before implementation; see the question recorded under Next.
+In progress: the M6 updater and installer (scope `installer-too`, chosen by the owner).
+`src-tauri/` moved under `app/` (standard Tauri layout, so `frontendDist` resolves); the icon
+set is generated from a placeholder `icon-source.png` and committed; `release.yml` builds the
+MSI/NSIS installers on pull requests and `main` and turns `v*` tags into signed draft releases;
+the `shell` job checks the Tauri crate on `windows-latest`. The updater reads releases from this
+repository with a read-only token baked into the binary (owner choice over a public mirror or a
+public repo); the signing keypair was generated in-session, the public half is committed in
+`tauri.conf.json`, the private half travels to the owner in chat only. The Settings About card
+checks, downloads, installs and relaunches through a new updater store, verified locally with
+`tsc`, `vite build` and `oxlint` (all green). Still unverified: the new CI jobs (runs pending),
+the two repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `UPDATER_PAT` — owner steps), and the
+end-to-end update against a real tagged release, which needs a desktop machine.
 
 ## Next
 
-1. **Land M6** (PR #12): green on all three jobs (CI run 35746341895); PR marked ready for
-   review. Decide with the owner whether the updater (promised by the PR title) and the
-   installer land in this branch or follow up: both need an update server, signing keys and a
-   product name, none of which exists yet.
+1. **Land M6** (PR #12): the performance/soak/chaos part is green on all three jobs (CI run
+   35746341895); the updater and installer joined the same branch. Merge after the new `shell`
+   and `bundle-windows` jobs go green, then the owner stores the two secrets
+   (`TAURI_SIGNING_PRIVATE_KEY` from the chat handoff, plus a fresh read-only `UPDATER_PAT`)
+   and rehearses one `v*` tag into a draft release on a desktop machine.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
