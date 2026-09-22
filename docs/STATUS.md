@@ -130,8 +130,9 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Next
 
-1. **Land M5** (this branch): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
-   i18n and the accessibility audit, per the PLAN row.
+1. **Land M5** (PR #10): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
+   i18n and the accessibility audit. Interface + both Rust jobs green on CI run 35731085910;
+   PR marked ready for review.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
