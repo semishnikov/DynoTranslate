@@ -128,9 +128,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
             "--lines" => options.lines = parse_number(&value()?, "--lines")? as usize,
             "--seed" => {
                 let text = value()?;
-                options.seed = text
-                    .parse()
-                    .map_err(|_| format!("--seed expects a whole number, got {text:?}"))?;
+                options.seed = match text.parse() {
+                    Ok(number) => number,
+                    Err(_) => return Err(format!("--seed expects a whole number, got {text:?}")),
+                };
             }
             "--no-images" => options.write_images = false,
             other => return Err(format!("unknown argument: {other}")),
@@ -148,9 +149,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
 }
 
 fn parse_number(value: &str, flag: &str) -> Result<u32, String> {
-    value
-        .parse()
-        .map_err(|_| format!("{flag} expects a whole number, got {value}"))
+    match value.parse() {
+        Ok(number) => Ok(number),
+        Err(_) => Err(format!("{flag} expects a whole number, got {value}")),
+    }
 }
 
 /// The whole run: plan, compose, write the ground truth, score both stages, write the report.
@@ -213,10 +215,13 @@ pub fn execute(options: &Options) -> Result<CorpusReport, RunError> {
 }
 
 fn io<T>(action: impl FnOnce() -> std::io::Result<T>, path: &Path) -> Result<T, RunError> {
-    action().map_err(|source| RunError::Io {
-        path: path.to_path_buf(),
-        source,
-    })
+    match action() {
+        Ok(value) => Ok(value),
+        Err(source) => Err(RunError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 fn write_json(path: &Path, document: &impl serde::Serialize) -> Result<(), RunError> {
@@ -232,12 +237,15 @@ fn write_png(path: &Path, frame: &lumen_core::Frame) -> Result<(), RunError> {
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
 
-    let mut writer = encoder
-        .write_header()
-        .map_err(|error| RunError::Png {
-            path: path.to_path_buf(),
-            detail: error.to_string(),
-        })?;
+    let mut writer = match encoder.write_header() {
+        Ok(w) => w,
+        Err(error) => {
+            return Err(RunError::Png {
+                path: path.to_path_buf(),
+                detail: error.to_string(),
+            });
+        }
+    };
 
     let mut rgba = Vec::with_capacity(frame.width() as usize * frame.height() as usize * 4);
     for y in 0..frame.height() {
@@ -247,12 +255,12 @@ fn write_png(path: &Path, frame: &lumen_core::Frame) -> Result<(), RunError> {
         }
     }
 
-    writer
-        .write_image_data(&rgba)
-        .map_err(|error| RunError::Png {
+    if let Err(error) = writer.write_image_data(&rgba) {
+        return Err(RunError::Png {
             path: path.to_path_buf(),
             detail: error.to_string(),
-        })?;
+        });
+    }
     Ok(())
 }
 
