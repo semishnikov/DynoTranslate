@@ -392,7 +392,10 @@ mod tests {
         assert_eq!(material.cases.len(), 3);
         let categories = [Category::Clean, Category::Stylised, Category::Stylised];
         assert_eq!(material.categories, categories);
-        assert_eq!(material.languages, vec![Language::English, Language::Russian, Language::German]);
+        assert_eq!(
+            material.languages,
+            vec![Language::English, Language::Russian, Language::German]
+        );
         for (case, (name, lines)) in material.cases.iter().zip(expected.iter()) {
             assert_eq!(case.name, *name);
             assert_eq!(case.reference, lines.join("\n"));
