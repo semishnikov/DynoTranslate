@@ -279,9 +279,7 @@ fn scale_rect(rect: Rect, scale: f32, width: u32, height: u32) -> Rect {
         ((rect.width as f32 * scale).round() as u32).max(1),
         ((rect.height as f32 * scale).round() as u32).max(1),
     );
-    scaled
-        .clamp_to(&Rect::new(0, 0, width, height))
-        .unwrap_or(scaled)
+    scaled.clamp_to(&Rect::new(0, 0, width, height)).unwrap_or(scaled)
 }
 
 fn fingerprint_of(hwnd: isize, frame: &Frame, bounds: Rect) -> u64 {

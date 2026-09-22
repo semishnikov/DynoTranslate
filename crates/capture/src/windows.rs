@@ -24,8 +24,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::{CaptureError, CaptureSource, CaptureTarget};
 
-/// `PrintWindow` is not in the windows 0.58 binding this crate uses. Flag 2 is
-/// `PW_RENDERFULLCONTENT`, which asks for the window's own picture rather than the screen.
+// PrintWindow is not in the windows 0.58 binding this crate uses. Flag 2 is
+// PW_RENDERFULLCONTENT, which asks for the window's own picture rather than the screen.
 #[link(name = "user32")]
 extern "system" {
     fn PrintWindow(hwnd: HWND, hdc: HDC, flags: u32) -> BOOL;
