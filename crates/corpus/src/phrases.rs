@@ -221,12 +221,7 @@ mod tests {
                 assert!(phrase.chars().count() <= 40, "{phrase} is longer than a UI line");
             }
             let unique: std::collections::HashSet<&str> = pack.phrases.iter().copied().collect();
-            assert_eq!(
-                unique.len(),
-                pack.phrases.len(),
-                "{:?} repeats a phrase",
-                pack.language
-            );
+            assert_eq!(unique.len(), pack.phrases.len(), "{:?} repeats a phrase", pack.language);
         }
     }
 
