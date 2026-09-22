@@ -1,9 +1,8 @@
 use lumen_language::Language;
 use lumen_layout::BlockKind;
 use lumen_translate::{
-    protect, restore, CircuitBreaker, CircuitState, DialogueContext, FallbackEngine, Glossary,
-    MemoryKey, StubTranslationEngine, TranslateItem, TranslationEngine, TranslationMemory,
-    TranslationRequest,
+    protect, restore, CircuitBreaker, CircuitState, DialogueContext, FallbackEngine, Glossary, MemoryKey,
+    StubTranslationEngine, TranslateItem, TranslationEngine, TranslationMemory, TranslationRequest,
 };
 
 #[test]
