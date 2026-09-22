@@ -207,12 +207,13 @@ not a button; the first assertion said otherwise and was corrected before that r
 
 ## Next
 
-1. **Land M6** from draft PR #13 (`arena/01a0ca15-dynotranslate`). Do not merge #12. The
-   installer job is green (release run 35765741805 at `9c187b6`). What remains is the owner:
-   store `TAURI_SIGNING_PRIVATE_KEY` (id `AF238AC5BE2A0E3C`, empty password, from this
-   session's chat — not the earlier handoff) and a fresh read-only `UPDATER_PAT`, then
-   rehearse one `v*` tag into a draft release on a desktop machine. That rehearsal is not
-   done. M7 does not start until this pull request is merged and that tag has been rehearsed.
+1. **Build the real loop**, as written in `docs/DELIVERY.md`. The owner asked for an
+   application that translates a live screen, and said they will not store secrets, create
+   tokens, or rehearse tags in order to see it. The installer in draft PR #13 packages a
+   shell. It does not translate. Do not open M7. Do not add another stand-in. The next
+   change is Windows capture, Windows OCR, a real English-to-Russian model, and the overlay,
+   in one installer the owner only has to download. Pull requests #11 and #12 stay closed
+   to merging. The signing key and `UPDATER_PAT` wait until a public update exists.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
