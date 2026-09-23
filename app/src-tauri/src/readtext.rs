@@ -706,46 +706,6 @@ fn download(url: &str, path: &Path, progress: &mut dyn FnMut(u64)) -> Result<(),
     file.flush().map_err(|error| error.to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn paint(frame: &mut Frame, x: u32, width: u32) {
-        for dx in 0..width {
-            for y in 4..16 {
-                frame.set_pixel(x + dx, y, [20, 20, 20, 255]);
-            }
-        }
-    }
-
-    #[test]
-    fn a_notepad_line_splits_on_word_gaps() {
-        let mut frame = Frame::filled(140, 22, [250, 250, 250, 255]).unwrap();
-        let mut x = 4u32;
-        for letters in [
-            &[3u32, 3, 1, 1, 3][..],
-            &[3, 3, 3, 1],
-            &[1, 3, 3],
-            &[3, 3, 3, 2],
-            &[3, 3, 3],
-            &[3, 1, 3, 3],
-        ] {
-            for &width in letters {
-                paint(&mut frame, x, width);
-                x += width + 1;
-            }
-            x += 5;
-        }
-        let spans = word_spans(&frame);
-        assert_eq!(spans.len(), 6, "{spans:?}");
-    }
-
-    #[test]
-    fn glued_punctuation_gets_a_space() {
-        assert_eq!(loosen("Hello.Openthedoor.Newgame"), "Hello. Openthedoor. Newgame");
-    }
-}
-
 /// Columns that belong to each word. A one- or two-pixel gap is letter spacing; a wider gap is a space.
 fn word_spans(crop: &Frame) -> Vec<(u32, u32)> {
     let width = crop.width();
@@ -854,4 +814,44 @@ fn model_ok(path: &Path, minimum: u64) -> bool {
     };
     let mut magic = [0u8; 8];
     file.read(&mut magic).ok() == Some(8) && magic[0] != b'<' && magic[0] != b'{' && &magic != b"version "
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paint(frame: &mut Frame, x: u32, width: u32) {
+        for dx in 0..width {
+            for y in 4..16 {
+                frame.set_pixel(x + dx, y, [20, 20, 20, 255]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_notepad_line_splits_on_word_gaps() {
+        let mut frame = Frame::filled(140, 22, [250, 250, 250, 255]).unwrap();
+        let mut x = 4u32;
+        for letters in [
+            &[3u32, 3, 1, 1, 3][..],
+            &[3, 3, 3, 1],
+            &[1, 3, 3],
+            &[3, 3, 3, 2],
+            &[3, 3, 3],
+            &[3, 1, 3, 3],
+        ] {
+            for &width in letters {
+                paint(&mut frame, x, width);
+                x += width + 1;
+            }
+            x += 5;
+        }
+        let spans = word_spans(&frame);
+        assert_eq!(spans.len(), 6, "{spans:?}");
+    }
+
+    #[test]
+    fn glued_punctuation_gets_a_space() {
+        assert_eq!(loosen("Hello.Openthedoor.Newgame"), "Hello. Openthedoor. Newgame");
+    }
 }
