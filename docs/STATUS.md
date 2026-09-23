@@ -228,12 +228,25 @@ build came from that line, and the three reported defects all live in it.
   really English content. The plate also hugs the typeset translation instead of a
   character-count guess, so a short label no longer becomes a window-wide bar.
 
+Verified on `1086fbf`: CI run 35881580299 is green on all four jobs — `Rust (ubuntu-latest)`,
+`Rust (windows-latest)`, `Shell (windows-latest)` and `Interface` — including the new tests
+(`text_drawn_at_an_origin_lands_in_its_own_box`, `russian_chrome_is_never_translated`, the
+word-gap split). The Release run 35881580309 on the same commit is green and uploads
+`installer-windows` (28,963,977 bytes); that setup is the build to try against the same
+Notepad scene. The on-screen result itself is not verified here: no display, no Windows.
+Getting the branch green took three repairs the previous session had left red: the shell
+fmt backlog (formatted with the real rustfmt binary fetched from the npm mirror), tauri-build
+hard-failing on the DirectML resource the shell job never copies (empty placeholder in
+`build.rs`, real DLL copied unconditionally at bundle time), and the clippy/type errors in
+`readtext`/`model`/`live` (`div_ceil`, enumerate, `matches!`, `?`, jagged test arrays, test
+module moved below the items it tests).
+
 ## Next
 
-1. **Land the live correctness fixes** from the section above: four CI jobs plus the
-   installer bundle job of this branch's run, then a fresh installer for the owner to try
-   against the same Notepad scene. Pull requests #11 and #12 stay closed to merging. The
-   signing key and `UPDATER_PAT` wait until a public update exists.
+1. **Owner tries the new installer** from Release run 35881580309 against the same Notepad
+   scene; if the on-screen result matches, this branch merges and M6 closes. Pull requests
+   #11 and #12 stay closed to merging. The signing key and `UPDATER_PAT` wait until a public
+   update exists.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
