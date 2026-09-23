@@ -352,7 +352,7 @@ fn components(map: &[f32], width: u32, height: u32) -> Vec<Rect> {
             }
             let box_w = max_x - min_x + 1;
             let box_h = max_y - min_y + 1;
-            if area < 12 || box_w < 3 || box_h < 3 || score / area as f32 < 0.4 {
+            if area < 12 || box_w < 3 || box_h < 3 || (score / area as f32) < 0.4 {
                 continue;
             }
             boxes.push(Rect::new(min_x as i32, min_y as i32, box_w, box_h));
