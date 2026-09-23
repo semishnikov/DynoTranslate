@@ -1087,7 +1087,7 @@ fn plate_colors(frame: &Frame, rect: &Rect) -> ([u8; 4], [u8; 4]) {
     if counted == 0 {
         return ([16, 16, 16, 255], [244, 244, 244, 255]);
     }
-    let best = (0..64).max_by_key(|bucket| buckets[bucket]).unwrap_or(0);
+    let best = (0..64).max_by_key(|bucket| buckets[*bucket]).unwrap_or(0);
     let n = buckets[best].max(1);
     let background = [
         (sums[best][0] / n) as u8,
