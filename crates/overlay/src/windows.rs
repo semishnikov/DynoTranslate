@@ -187,13 +187,13 @@ impl OverlaySurface for LayeredOverlay {
             AlphaFormat: windows::Win32::Graphics::Gdi::AC_SRC_ALPHA as u8,
         };
 
-        if paint_window(self.handle, screen.dc, &self.origin, &size, dib.dc, &source, &blend).is_ok() {
+        if paint_window(self.handle, screen.dc, self.origin, size, dib.dc, source, blend).is_ok() {
             return Ok(());
         }
         // A window left in attribute mode rejects per-pixel updates. Clearing the layered
         // bit and putting it back is the documented way to make UpdateLayeredWindow work again.
         relayer(self.handle);
-        paint_window(self.handle, screen.dc, &self.origin, &size, dib.dc, &source, &blend).map_err(|error| {
+        paint_window(self.handle, screen.dc, self.origin, size, dib.dc, source, blend).map_err(|error| {
             SurfaceError::Platform {
                 operation: "UpdateLayeredWindow",
                 detail: error.message(),
