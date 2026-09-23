@@ -7,9 +7,11 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backends;
 mod live;
 mod model;
 mod readtext;
+mod settings;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -125,7 +127,9 @@ fn main() {
             let app_handle = app.handle().clone();
             let control = live::control();
             app.manage(control.clone());
-            std::thread::spawn(move || live::run(app_handle, control, bundled));
+            let live_settings = settings::handle();
+            app.manage(live_settings.clone());
+            std::thread::spawn(move || live::run(app_handle, control, bundled, live_settings));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -136,7 +140,9 @@ fn main() {
             live_preview,
             set_paused,
             list_windows,
-            choose_window
+            choose_window,
+            settings::get_live_settings,
+            settings::set_live_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lumen shell");

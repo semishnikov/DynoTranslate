@@ -179,6 +179,34 @@ export const ru: Record<keyof typeof en, string> = {
   "onboarding.done.body":
     "Alt+T переключает оверлей. Удерживайте Alt+Q, чтобы увидеть оригинал. DynoTranslate всегда можно открыть из трея.",
 
+  "settings.live": "Живой перевод",
+  "settings.live.description":
+    "Каждая шестерёнка применяется к самому следующему кадру, без перезапуска. Журнал фиксирует каждое значение.",
+  "settings.live.style": "Стиль оверлея",
+  "settings.live.style.hint":
+    "Бесшовный стирает оригинал и рисует перевод на его месте; Плита накрывает подложкой; Субтитры собирают перевод внизу.",
+  "settings.live.style.seamless": "Бесшовный",
+  "settings.live.style.plate": "Плита",
+  "settings.live.style.subtitles": "Субтитры",
+  "settings.live.backend": "Движок перевода",
+  "settings.live.backend.hint":
+    "Google работает без ключа. DeepL и OpenAI требуют ключ; OpenAI переводит весь экран с контекстом. Без сети подхватывает локальная модель.",
+  "settings.live.backend.local": "Локальный",
+  "settings.live.backend.google": "Google",
+  "settings.live.backend.deepl": "DeepL",
+  "settings.live.backend.openai": "OpenAI",
+  "settings.live.confidence": "Минимальная уверенность чтения",
+  "settings.live.confidence.hint":
+    "Чтения ниже порога пропускаются, поэтому вкладки, меню и иконки не превращаются в мусор.",
+  "settings.live.font": "Размер шрифта",
+  "settings.live.lines": "Строк за тик",
+  "settings.live.opacity": "Прозрачность оверлея",
+  "settings.live.context": "Строк контекста для LLM",
+  "settings.live.context.hint": "Прежние строки передаются OpenAI, чтобы имена и тон оставались связными.",
+  "settings.live.deeplKey": "Ключ DeepL API",
+  "settings.live.openaiKey": "Ключ OpenAI API",
+  "settings.live.openaiModel": "Модель OpenAI",
+
   "hotkey.hint": "Alt+T оверлей · Alt+Q оригинал · Alt+Shift+O открыть",
   "hotkey.toggleUnavailable": "Глобальные клавиши нужны в настольной оболочке; откройте DynoTranslate из трея.",
 };

@@ -179,6 +179,34 @@ export const en = {
   "onboarding.done.body":
     "Alt+T turns the overlay on and off. Hold Alt+Q to peek at the original text. Open DynoTranslate any time from the tray.",
 
+  "settings.live": "Live translation",
+  "settings.live.description":
+    "Every gear applies to the very next frame, no restart. The journal records each value.",
+  "settings.live.style": "Overlay style",
+  "settings.live.style.hint":
+    "Seamless erases the original and draws the translation in its place; Plate covers with a backdrop; Subtitles collect at the bottom.",
+  "settings.live.style.seamless": "Seamless",
+  "settings.live.style.plate": "Plate",
+  "settings.live.style.subtitles": "Subtitles",
+  "settings.live.backend": "Translation engine",
+  "settings.live.backend.hint":
+    "Google works with no key. DeepL and OpenAI need keys; OpenAI translates the whole screen with context. Without network the local model takes over.",
+  "settings.live.backend.local": "Local",
+  "settings.live.backend.google": "Google",
+  "settings.live.backend.deepl": "DeepL",
+  "settings.live.backend.openai": "OpenAI",
+  "settings.live.confidence": "Minimum reading confidence",
+  "settings.live.confidence.hint":
+    "Reads below the threshold are skipped, so tabs, menus and icons never become garbage.",
+  "settings.live.font": "Font size",
+  "settings.live.lines": "Lines translated per tick",
+  "settings.live.opacity": "Overlay opacity",
+  "settings.live.context": "Context lines for the LLM",
+  "settings.live.context.hint": "Earlier lines handed to OpenAI so names and tone stay coherent.",
+  "settings.live.deeplKey": "DeepL API key",
+  "settings.live.openaiKey": "OpenAI API key",
+  "settings.live.openaiModel": "OpenAI model",
+
   "hotkey.hint": "Alt+T overlay · Alt+Q original · Alt+Shift+O open",
   "hotkey.toggleUnavailable": "Global hotkeys need the desktop shell; open DynoTranslate from the tray.",
 } as const;

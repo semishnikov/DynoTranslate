@@ -3,7 +3,7 @@
 //! The settings window used to be a separate mock. This loop is the product, and the window
 //! only reports what the loop is actually doing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -14,23 +14,17 @@ use std::time::{Duration, Instant};
 use lumen_capture::{capture_window_picture, capture_window_screen, enumerate_targets};
 use lumen_core::{Frame, Rect};
 use lumen_overlay::windows::LayeredOverlay;
-use lumen_overlay::{Compositor, OverlayBlock, OverlayLayout, OverlayStyle, OverlaySurface};
+use lumen_overlay::{Compositor, OverlayBlock, OverlayLayout, OverlaySurface};
 use lumen_render::FontWeight;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::backends;
 use crate::model::Translator;
 use crate::readtext::Reader;
+use crate::settings::LiveSettingsHandle;
 
 const MAX_OCR_WIDTH: u32 = 1280;
-/// Lines translated per tick: eight keeps a video-paced screen draining its queue while a
-/// 30 ms recompose cadence streams the plates in instead of one long blocking batch.
-const NEW_LINES_PER_TICK: usize = 8;
-/// Reads below this confidence are the recogniser guessing at chrome, watermarks or stylised
-/// art. The journal prints every skip with its number, so the threshold stays honest: in the
-/// owner's log every garbage plate came from a read at 0.73 or below, every good translation
-/// from 0.84 and up.
-const MIN_LINE_CONFIDENCE: f32 = 0.75;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -149,10 +143,10 @@ pub fn set_paused(control: &Control, app: &AppHandle, paused: bool) {
     }
 }
 
-pub fn run(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
+pub fn run(app: AppHandle, control: Control, bundled: Option<PathBuf>, settings: LiveSettingsHandle) {
     loop {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            loop_forever(app.clone(), control.clone(), bundled.clone());
+            loop_forever(app.clone(), control.clone(), bundled.clone(), settings.clone());
         }));
         let Err(error) = result else {
             continue;
@@ -173,7 +167,7 @@ pub fn run(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
 }
 
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
+fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, settings: LiveSettingsHandle) {
     let _ = log("live loop started");
     init_winrt();
     if let Err(error) = register_pause_hotkey() {
@@ -284,6 +278,8 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
     };
     let mut overlay: Option<LayeredOverlay> = None;
     let mut cache: HashMap<String, String> = HashMap::new();
+    /// Recent source/translation pairs; the LLM backends read it for coherence.
+    let mut context: VecDeque<(String, String)> = VecDeque::new();
     let mut last_sig: Vec<u8> = Vec::new();
     let mut last_hwnd = 0isize;
     let mut quiet_until = Instant::now();
@@ -396,7 +392,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 }
             };
 
-            let mut fresh = 0usize;
+            let settings = settings.read().expect("live settings").clone();
             let mut pending = false;
             let mut blocks = Vec::new();
             let mut sample = String::new();
@@ -416,13 +412,16 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 last_scene_key = scene_key;
                 let _ = writeln!(
                     log_file,
-                    "{} tick window={:?} frame={}x{} ocr={}ms lines={}",
+                    "{} tick window={:?} frame={}x{} ocr={}ms lines={} style={:?} backend={} minconf={:.2}",
                     stamp(),
                     name,
                     frame.width(),
                     frame.height(),
                     ocr_started.elapsed().as_millis(),
-                    lines.len()
+                    lines.len(),
+                    settings.overlay_style,
+                    settings.translator,
+                    settings.min_confidence
                 );
                 for line in &lines {
                     let b = line.bounds;
@@ -439,6 +438,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     );
                 }
             }
+
+            struct Kept {
+                key: String,
+                rect: Rect,
+                conf: f32,
+            }
+            let mut kept: Vec<Kept> = Vec::new();
             for line in lines {
                 let source = line.text.trim();
                 if source.chars().all(|ch| !ch.is_alphabetic()) {
@@ -462,7 +468,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     }
                     continue;
                 }
-                if line.confidence < MIN_LINE_CONFIDENCE {
+                if line.confidence < settings.min_confidence {
                     if dump {
                         let _ = writeln!(
                             log_file,
@@ -486,65 +492,131 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     Script::None => continue,
                     Script::Latin => saw_latin = true,
                 }
-                let key = clip(source, 180);
-                let translated = if let Some(cached) = cache.get(&key) {
-                    if dump {
-                        let _ = writeln!(log_file, "{} reuse {:?} -> {:?}", stamp(), key, cached);
-                    }
-                    cached.clone()
-                } else if fresh >= NEW_LINES_PER_TICK {
-                    pending = true;
-                    continue;
-                } else {
-                    fresh += 1;
-                    let started = Instant::now();
-                    match translate_fully(&mut translator, &key) {
-                        Ok(text) if has_cyrillic(&text) => {
-                            let _ = writeln!(
-                                log_file,
-                                "{} translate ms={} {:?} -> {:?}",
-                                stamp(),
-                                started.elapsed().as_millis(),
-                                key,
-                                text
-                            );
-                            cache.insert(key.clone(), text.clone());
-                            control.inner.translated.fetch_add(1, Ordering::SeqCst);
-                            text
-                        }
-                        Ok(_) => continue,
-                        Err(error) => {
-                            let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
-                            continue;
-                        }
-                    }
-                };
-                if cache.len() > 2000 {
-                    cache.clear();
-                }
-                let score = translated.chars().count();
-                if score > sample_score {
-                    sample_score = score;
-                    sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
-                }
-                // The plate is exactly the box the original occupies: detection already grows
-                // its boxes by a couple of pixels, so any extra padding or widening only made
-                // plates overlap their neighbours and stick out of the bubble.
                 let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
                 if rect.height < 8 || rect.width < 8 {
                     continue;
                 }
-                let size = (rect.height as f32 * 0.72).clamp(12.0, 42.0) as u32;
-                let (background, foreground) = plate_colors(&frame, &rect);
+                kept.push(Kept {
+                    key: clip(source, 180),
+                    rect,
+                    conf: line.confidence,
+                });
+            }
+
+            // Cached lines first; the rest go to the chosen backend in one batch so an LLM
+            // sees the whole screen at once. The local model stays the universal fallback.
+            let mut got: HashMap<String, String> = HashMap::new();
+            for item in &kept {
+                if let Some(cached) = cache.get(&item.key) {
+                    if dump {
+                        let _ = writeln!(log_file, "{} reuse {:?} -> {:?}", stamp(), item.key, cached);
+                    }
+                    got.insert(item.key.clone(), cached.clone());
+                }
+            }
+            let mut missing: Vec<&Kept> = kept.iter().filter(|item| !got.contains_key(&item.key)).collect();
+            if missing.len() > settings.max_lines_per_tick {
+                pending = true;
+                missing.truncate(settings.max_lines_per_tick);
+            }
+            if !missing.is_empty() {
+                let keys: Vec<String> = missing.iter().map(|item| item.key.clone()).collect();
+                let started = Instant::now();
+                let mut outs: Vec<Option<String>> = vec![None; keys.len()];
+                if settings.translator != "local" {
+                    let pairs: Vec<(String, String)> = context.iter().cloned().collect();
+                    match backends::translate_batch(&settings.translator, &keys, &pairs, &settings) {
+                        Ok(batch) if batch.len() == keys.len() => {
+                            for (slot, text) in outs.iter_mut().zip(batch) {
+                                if has_cyrillic(&text) {
+                                    *slot = Some(text);
+                                }
+                            }
+                        }
+                        Ok(batch) => {
+                            let _ = writeln!(
+                                log_file,
+                                "{} backend {} returned {} of {} lines; local fills the rest",
+                                stamp(),
+                                settings.translator,
+                                batch.len(),
+                                keys.len()
+                            );
+                        }
+                        Err(error) => {
+                            let _ = writeln!(
+                                log_file,
+                                "{} backend {} error: {}; local fills the rest",
+                                stamp(),
+                                settings.translator,
+                                error
+                            );
+                        }
+                    }
+                }
+                for (index, key) in keys.iter().enumerate() {
+                    if outs[index].is_some() {
+                        continue;
+                    }
+                    match translate_fully(&mut translator, key) {
+                        Ok(text) if has_cyrillic(&text) => outs[index] = Some(text),
+                        Ok(_) => {}
+                        Err(error) => {
+                            let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
+                        }
+                    }
+                }
+                let _ = writeln!(
+                    log_file,
+                    "{} translate backend={} ms={} lines={}",
+                    stamp(),
+                    settings.translator,
+                    started.elapsed().as_millis(),
+                    keys.len()
+                );
+                for (index, key) in keys.iter().enumerate() {
+                    let Some(text) = outs[index].clone() else {
+                        continue;
+                    };
+                    got.insert(key.clone(), text.clone());
+                    cache.insert(key.clone(), text.clone());
+                    control.inner.translated.fetch_add(1, Ordering::SeqCst);
+                    if settings.context_lines > 0 {
+                        context.push_back((key.clone(), text));
+                        while context.len() > settings.context_lines {
+                            context.pop_front();
+                        }
+                    }
+                }
+            }
+            if cache.len() > 2000 {
+                cache.clear();
+            }
+
+            for item in &kept {
+                let Some(translated) = got.get(&item.key) else {
+                    pending = true;
+                    continue;
+                };
+                let score = translated.chars().count();
+                if score > sample_score {
+                    sample_score = score;
+                    sample = format!("{} → {}", clip(&item.key, 120), clip(translated, 120));
+                }
+                // The plate is exactly the box the original occupies: detection already grows
+                // its boxes by a couple of pixels, so any extra padding only made plates
+                // overlap their neighbours.
+                let size = (item.rect.height as f32 * settings.font_scale).clamp(12.0, 42.0) as u32;
+                let (background, foreground) = plate_colors(&frame, &item.rect);
                 if dump {
                     let _ = writeln!(
                         log_file,
                         "{} plate rect=({},{},{}x{}) font={} bg=[{},{},{}] fg=[{},{},{}] text={:?}",
                         stamp(),
-                        rect.x,
-                        rect.y,
-                        rect.width,
-                        rect.height,
+                        item.rect.x,
+                        item.rect.y,
+                        item.rect.width,
+                        item.rect.height,
                         size,
                         background[0],
                         background[1],
@@ -556,10 +628,10 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     );
                 }
                 blocks.push(
-                    OverlayBlock::new(rect, translated)
+                    OverlayBlock::new(item.rect, translated.clone())
                         .with_font(size, FontWeight::Regular, false)
                         .with_colors(background, foreground)
-                        .with_confidence(line.confidence),
+                        .with_confidence(item.conf),
                 );
             }
 
@@ -585,7 +657,9 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 continue;
             }
 
-            let layout = OverlayLayout::new(OverlayStyle::Plate).with_blocks(blocks);
+            let layout = OverlayLayout::new(settings.overlay_style)
+                .with_blocks(blocks)
+                .with_opacity(settings.opacity);
             let Some(compositor) = compositor.as_mut() else {
                 let mut status = view(
                     "translating",
