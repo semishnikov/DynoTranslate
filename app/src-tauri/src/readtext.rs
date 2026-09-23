@@ -18,13 +18,14 @@ const DET_URLS: &[&str] = &[
     "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/en_PP-OCRv3_det_infer.onnx",
     "https://media.githubusercontent.com/media/e-supple/process-medical-records/main/ocr_models/models--SWHL--RapidOCR/snapshots/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv4/en_PP-OCRv3_det_infer.onnx",
 ];
-const REC_URLS: &[&str] =
-    &["https://huggingface.co/deepghs/paddleocr/resolve/main/rec/cyrillic_PP-OCRv3_rec/model.onnx"];
+const REC_URLS: &[&str] = &[
+    "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx",
+    "https://media.githubusercontent.com/media/e-supple/process-medical-records/main/ocr_models/models--SWHL--RapidOCR/snapshots/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx",
+];
 
-/// Character list for the cyrillic PP-OCRv3 recogniser, in file order (PaddleOCR's
-/// `cyrillic_dict.txt`: Latin plus Cyrillic, so English content reads correctly while Russian
-/// window chrome reads as Cyrillic and is skipped by the live loop). Index 0 is the blank.
-const ALPHABET: &str = r###" !#$%&'(+,-./0123456789:?@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzÉéЁЄІЈЉЎАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяёђєіјљњћўџҐґ"###;
+/// Character list for the English PP-OCRv3 recogniser, in file order. Model index 0 is the blank.
+const ALPHABET: &str =
+    r###"0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~!"#$%&'()*+,-./ "###;
 
 pub struct Reader {
     detect: Session,
@@ -37,7 +38,7 @@ impl Reader {
     pub fn load(log: &mut dyn Write, mut report: impl FnMut(&str)) -> Result<Self, String> {
         let dir = data_dir()?;
         let detect_path = ensure(&dir, "ocr-det.onnx", DET_URLS, 1_800_000, log, &mut report)?;
-        let recognize_path = ensure(&dir, "ocr-rec-cyr.onnx", REC_URLS, 7_000_000, log, &mut report)?;
+        let recognize_path = ensure(&dir, "ocr-rec.onnx", REC_URLS, 7_000_000, log, &mut report)?;
         report("ocr-sessions");
         let _ = writeln!(log, "loading text reader");
         let detect = open_session(&detect_path).map_err(|error| format!("detect: {error}"))?;

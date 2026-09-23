@@ -23,13 +23,9 @@ use crate::model::Translator;
 use crate::readtext::Reader;
 
 const MAX_OCR_WIDTH: u32 = 1280;
-/// Translations stream in a few per tick instead of one long blocking batch, so the first
-/// plates land about a second after the screen changes and the loop stays responsive.
-const NEW_LINES_PER_TICK: usize = 3;
-/// A bubble whose mean read confidence is below this is a detector hallucination, not text.
-/// The bar is deliberately low — coverage matters, and garbage is filtered by word shape, not
-/// by a confidence number the model reports optimistically anyway.
-const MIN_BUBBLE_CONFIDENCE: f32 = 0.45;
+/// Lines translated per tick: eight keeps a video-paced screen draining its queue while a
+/// 30 ms recompose cadence streams the plates in instead of one long blocking batch.
+const NEW_LINES_PER_TICK: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -403,17 +399,11 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             let mut saw_other = false;
             let mut saw_cyrillic = false;
             let mut saw_latin = false;
-            // Lines of one bubble become one block: the translator sees whole sentences, the
-            // overlay draws one plate, and the page pays for one translation per bubble.
-            let mut bubbles = group_bubbles(&lines);
-            bubbles
-                .sort_by_key(|bubble| std::cmp::Reverse(u64::from(bubble.rect.width) * u64::from(bubble.rect.height)));
-
             // The journal dumps every stage when the reading changes and stays quiet while the
             // same text is on screen, so the file the owner sends back is readable.
-            let scene_key = bubbles
+            let scene_key = lines
                 .iter()
-                .map(|bubble| bubble.text.as_str())
+                .map(|line| line.text.as_str())
                 .collect::<Vec<_>>()
                 .join("|");
             let dump = scene_key != last_scene_key;
@@ -421,14 +411,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 last_scene_key = scene_key;
                 let _ = writeln!(
                     log_file,
-                    "{} tick window={:?} frame={}x{} ocr={}ms lines={} bubbles={}",
+                    "{} tick window={:?} frame={}x{} ocr={}ms lines={}",
                     stamp(),
                     name,
                     frame.width(),
                     frame.height(),
                     ocr_started.elapsed().as_millis(),
-                    lines.len(),
-                    bubbles.len()
+                    lines.len()
                 );
                 for line in &lines {
                     let b = line.bounds;
@@ -445,8 +434,8 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     );
                 }
             }
-            for bubble in bubbles {
-                let source = bubble.text.trim();
+            for line in lines {
+                let source = line.text.trim();
                 if source.chars().all(|ch| !ch.is_alphabetic()) {
                     continue;
                 }
@@ -455,13 +444,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     // already in the target language; translating it only draws garbage over
                     // text the user can read.
                     if dump {
-                        let _ = writeln!(
-                            log_file,
-                            "{} skip reason=russian conf={:.2} text={:?}",
-                            stamp(),
-                            bubble.avg_conf,
-                            source
-                        );
+                        let _ = writeln!(log_file, "{} skip reason=russian text={:?}", stamp(), source);
                     }
                     saw_cyrillic = true;
                     continue;
@@ -470,42 +453,8 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     // Recognition noise from borders and icons has no vowel-bearing words;
                     // never translate or cover something that is not really text.
                     if dump {
-                        let _ = writeln!(
-                            log_file,
-                            "{} skip reason=noise conf={:.2} text={:?}",
-                            stamp(),
-                            bubble.avg_conf,
-                            source
-                        );
+                        let _ = writeln!(log_file, "{} skip reason=noise text={:?}", stamp(), source);
                     }
-                    continue;
-                }
-                if bubble.avg_conf < MIN_BUBBLE_CONFIDENCE {
-                    if dump {
-                        let _ = writeln!(
-                            log_file,
-                            "{} skip reason=lowconf conf={:.2} text={:?}",
-                            stamp(),
-                            bubble.avg_conf,
-                            source
-                        );
-                    }
-                    saw_latin = true;
-                    continue;
-                }
-                if !english_like(source) {
-                    // Stylised lettering reads as non-words ("fwe'beaveyeu"); translating that
-                    // only prints the model's guess over the art.
-                    if dump {
-                        let _ = writeln!(
-                            log_file,
-                            "{} skip reason=not-english conf={:.2} text={:?}",
-                            stamp(),
-                            bubble.avg_conf,
-                            source
-                        );
-                    }
-                    cache.insert(clip(source, 180), String::new());
                     continue;
                 }
                 match script_of(source) {
@@ -521,57 +470,35 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     Script::Latin => saw_latin = true,
                 }
                 let key = clip(source, 180);
-                let translated = match cache.get(&key) {
-                    // An empty entry is a remembered rejection: a misread we will never cover.
-                    Some(cached) if cached.is_empty() => continue,
-                    Some(cached) => {
-                        if dump {
-                            let _ = writeln!(log_file, "{} reuse cached {:?} -> {:?}", stamp(), key, cached);
-                        }
-                        cached.clone()
+                let translated = if let Some(cached) = cache.get(&key) {
+                    if dump {
+                        let _ = writeln!(log_file, "{} reuse {:?} -> {:?}", stamp(), key, cached);
                     }
-                    None if fresh >= NEW_LINES_PER_TICK => {
-                        pending = true;
-                        if dump {
-                            let _ = writeln!(log_file, "{} queued for next tick {:?}", stamp(), key);
-                        }
-                        continue;
-                    }
-                    None => {
-                        fresh += 1;
-                        let started = Instant::now();
-                        match translate_fully(&mut translator, &key) {
-                            Ok(text) if has_cyrillic(&text) && plausible_russian(&text) => {
-                                let _ = writeln!(
-                                    log_file,
-                                    "{} translate fresh ms={} {:?} -> {:?}",
-                                    stamp(),
-                                    started.elapsed().as_millis(),
-                                    key,
-                                    text
-                                );
-                                cache.insert(key.clone(), text.clone());
-                                control.inner.translated.fetch_add(1, Ordering::SeqCst);
+                    cached.clone()
+                } else if fresh >= NEW_LINES_PER_TICK {
+                    pending = true;
+                    continue;
+                } else {
+                    fresh += 1;
+                    let started = Instant::now();
+                    match translate_fully(&mut translator, &key) {
+                        Ok(text) if has_cyrillic(&text) => {
+                            let _ = writeln!(
+                                log_file,
+                                "{} translate ms={} {:?} -> {:?}",
+                                stamp(),
+                                started.elapsed().as_millis(),
+                                key,
                                 text
-                            }
-                            Ok(text) => {
-                                // Garbage in, garbage out — remember the verdict so a stuck
-                                // misread never burns the per-tick translation budget again.
-                                let _ = writeln!(
-                                    log_file,
-                                    "{} reject target ms={} {:?} -> {:?}",
-                                    stamp(),
-                                    started.elapsed().as_millis(),
-                                    key,
-                                    text
-                                );
-                                cache.insert(key.clone(), String::new());
-                                continue;
-                            }
-                            Err(error) => {
-                                let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
-                                continue;
-                            }
+                            );
+                            cache.insert(key.clone(), text.clone());
+                            control.inner.translated.fetch_add(1, Ordering::SeqCst);
+                            text
+                        }
+                        Ok(_) => continue,
+                        Err(error) => {
+                            let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
+                            continue;
                         }
                     }
                 };
@@ -583,24 +510,23 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     sample_score = score;
                     sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
                 }
-                let rect = scale_rect(bubble.rect, scale, frame.width(), frame.height());
+                let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
                 let rect = pad(rect, 2, frame.bounds());
                 let rect = widen(rect, frame.bounds());
                 if rect.height < 8 || rect.width < 8 {
                     continue;
                 }
-                let size = (bubble.line_height as f32 * scale * 0.72).clamp(12.0, 42.0) as u32;
+                let size = (rect.height as f32 * 0.72).clamp(12.0, 42.0) as u32;
                 let (background, foreground) = plate_colors(&frame, &rect);
                 if dump {
-                    let b = rect;
                     let _ = writeln!(
                         log_file,
                         "{} plate rect=({},{},{}x{}) font={} bg=[{},{},{}] fg=[{},{},{}] text={:?}",
                         stamp(),
-                        b.x,
-                        b.y,
-                        b.width,
-                        b.height,
+                        rect.x,
+                        rect.y,
+                        rect.width,
+                        rect.height,
                         size,
                         background[0],
                         background[1],
@@ -615,7 +541,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     OverlayBlock::new(rect, translated)
                         .with_font(size, FontWeight::Regular, false)
                         .with_colors(background, foreground)
-                        .with_confidence(bubble.confidence),
+                        .with_confidence(line.confidence),
                 );
             }
 
@@ -1123,75 +1049,6 @@ fn picture_same(left: &[u8], right: &[u8]) -> bool {
     changed < 3
 }
 
-/// One visual block of text: a speech bubble or paragraph the line reader split into rows.
-struct Bubble {
-    rect: Rect,
-    text: String,
-    /// Weakest line: drives the compositor's plate fallback.
-    confidence: f32,
-    /// Mean line confidence: drives the low-confidence skip.
-    avg_conf: f32,
-    /// Height of one source line; the translation is typeset at this size, not the bubble's.
-    line_height: u32,
-}
-
-/// Rows that stack in one column with a small gap belong to the same bubble, so the translator
-/// gets whole sentences and the overlay draws one plate per bubble instead of one per row.
-fn group_bubbles(lines: &[lumen_ocr::Recognition]) -> Vec<Bubble> {
-    struct Draft {
-        rect: Rect,
-        text: String,
-        confidence: f32,
-        conf_sum: f32,
-        line_count: u32,
-        line_height: u32,
-    }
-    let mut order: Vec<&lumen_ocr::Recognition> = lines.iter().collect();
-    order.sort_by_key(|line| line.bounds.y);
-    let mut drafts: Vec<Draft> = Vec::new();
-    for line in order {
-        let bounds = line.bounds;
-        let joined = drafts.iter_mut().rev().find(|draft| same_block(draft.rect, bounds));
-        if let Some(draft) = joined {
-            draft.rect = draft.rect.union(&bounds);
-            draft.text.push(' ');
-            draft.text.push_str(line.text.trim());
-            draft.confidence = draft.confidence.min(line.confidence);
-            draft.conf_sum += line.confidence;
-            draft.line_count += 1;
-            draft.line_height = draft.line_height.max(bounds.height);
-        } else {
-            drafts.push(Draft {
-                rect: bounds,
-                text: line.text.trim().to_owned(),
-                confidence: line.confidence,
-                conf_sum: line.confidence,
-                line_count: 1,
-                line_height: bounds.height.max(1),
-            });
-        }
-    }
-    drafts
-        .into_iter()
-        .map(|draft| Bubble {
-            rect: draft.rect,
-            text: draft.text,
-            confidence: draft.confidence,
-            avg_conf: draft.conf_sum / draft.line_count.max(1) as f32,
-            line_height: draft.line_height,
-        })
-        .collect()
-}
-
-fn same_block(upper: Rect, lower: Rect) -> bool {
-    let gap = (lower.y - upper.bottom()).max(0);
-    if gap * 5 > upper.height.max(1) as i32 * 4 {
-        return false;
-    }
-    let overlap = upper.right().min(lower.right()) - upper.x.max(lower.x);
-    overlap * 2 > upper.width.min(lower.width) as i32
-}
-
 /// Grows the box a little so the plate fully covers the source glyphs, which detection boxes
 /// hug tightly.
 fn pad(rect: Rect, pixels: i32, bounds: Rect) -> Rect {
@@ -1267,35 +1124,6 @@ fn plate_colors(frame: &Frame, rect: &Rect) -> ([u8; 4], [u8; 4]) {
     (background, foreground)
 }
 
-/// Transliterated garbage ("МЭДОЛЕКЕНТОЕМО") is heavy in letters real Russian almost never
-/// uses and has no lowercase words; a translation that is mostly rare letters, or a long
-/// all-caps run, came from a misread, not a sentence.
-fn plausible_russian(text: &str) -> bool {
-    let mut total = 0u32;
-    let mut rare = 0u32;
-    let mut lower = 0u32;
-    for ch in text.chars() {
-        if !('\u{0400}'..='\u{04FF}').contains(&ch) {
-            continue;
-        }
-        total += 1;
-        if ch.is_lowercase() {
-            lower += 1;
-        }
-        if "эщъжфхцЭЩЪЖФХЦ".contains(ch) {
-            rare += 1;
-        }
-    }
-    if total == 0 {
-        return true;
-    }
-    if rare * 12 > total {
-        return false;
-    }
-    // Long all-caps strings: stylised lettering transliterates into shouting gibberish.
-    !(total >= 12 && lower == 0)
-}
-
 /// Clock prefix for journal lines, so the owner's report shows when each stage happened.
 fn stamp() -> String {
     let secs = std::time::SystemTime::now()
@@ -1303,118 +1131,6 @@ fn stamp() -> String {
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     format!("{:02}:{:02}:{:02}", secs / 3600 % 24, secs / 60 % 60, secs % 60)
-}
-
-/// Contractions are the only English words that carry an apostrophe; anything else with one
-/// ("fwe'beaveyeu") is a misread of stylised lettering, not a sentence.
-const CONTRACTIONS: &[&str] = &[
-    "i'm",
-    "you're",
-    "he's",
-    "she's",
-    "it's",
-    "we're",
-    "they're",
-    "i've",
-    "you've",
-    "we've",
-    "they've",
-    "i'll",
-    "you'll",
-    "he'll",
-    "she'll",
-    "we'll",
-    "they'll",
-    "i'd",
-    "you'd",
-    "he'd",
-    "she'd",
-    "we'd",
-    "they'd",
-    "don't",
-    "doesn't",
-    "didn't",
-    "can't",
-    "couldn't",
-    "won't",
-    "wouldn't",
-    "shan't",
-    "shouldn't",
-    "isn't",
-    "aren't",
-    "wasn't",
-    "weren't",
-    "hasn't",
-    "haven't",
-    "hadn't",
-    "let's",
-    "that's",
-    "there's",
-    "here's",
-    "what's",
-    "who's",
-    "where's",
-    "when's",
-    "why's",
-    "how's",
-    "o'clock",
-    "ma'am",
-    "o'er",
-    "ne'er",
-    "'em",
-    "y'all",
-];
-
-/// Common English letter pairs, space separated so a two-letter lookup never spans a boundary.
-/// A lowercase word whose pairs are mostly absent from this list reads as noise, not English.
-const COMMON_PAIRS: &str = "th he in er an re on at en nd ti es or te of ed is it al ar st to \
-     nt ng se ha as ou io le ve co me de hi ri ro ic ne ea ra ce li ch ll be ma si om ur el la \
-     pe so no ct di pa ru sa ta ge ho wi lo po mo na mi mu ni ol pi pu sc sh sk sl sm sn sp su \
-     sw tr tu tw un us wa we wo ye yo ec qu ui il dr nk br cr fr gr pr vr wr cl fl gl pl bl ph \
-     wh gh ht ft lt mt pt rt ot ut et ak ck dg ee oo ff ss tt rr nn mm pp bb dd gg aa ii uu ov \
-     iv av ev ow aw ew";
-
-fn word_is_garbage(word: &str) -> bool {
-    let lower = word.to_lowercase();
-    if lower.contains('\'') && !CONTRACTIONS.contains(&lower.as_str()) {
-        return true;
-    }
-    // Names and sentence starts are capitalised; statistics only judge lowercase words.
-    if word.chars().next().map(char::is_uppercase).unwrap_or(true) {
-        return false;
-    }
-    let letters: Vec<char> = lower.chars().filter(|ch| ch.is_ascii_alphabetic()).collect();
-    if letters.len() < 5 {
-        return false;
-    }
-    let mut common = 0u32;
-    let mut total = 0u32;
-    for pair in letters.windows(2) {
-        total += 1;
-        if COMMON_PAIRS.contains(&format!("{}{}", pair[0], pair[1])) {
-            common += 1;
-        }
-    }
-    // A real English word keeps at least half of its pairs in the common list.
-    common * 2 < total
-}
-
-/// Whether the reading looks like English sentences rather than recognition noise. A bubble is
-/// rejected only when the judged words are mostly garbage, so one odd name does not kill it.
-fn english_like(text: &str) -> bool {
-    let mut judged = 0u32;
-    let mut garbage = 0u32;
-    for word in text.split(|ch: char| !ch.is_alphabetic() && ch != '\'') {
-        if word.chars().filter(|ch| ch.is_alphabetic()).count() < 3 {
-            continue;
-        }
-        judged += 1;
-        if word_is_garbage(word) {
-            garbage += 1;
-        }
-    }
-    // A lone garbage word sinks the bubble; one odd word inside a real sentence does not.
-    judged == 0 || garbage * 2 <= judged
 }
 
 /// A translation is usually a little longer than the original. Give the fitter a quarter more
@@ -1520,55 +1236,6 @@ mod tests {
     fn a_decimal_is_not_a_sentence_break() {
         let parts = sentence_pieces("Damage 1.5");
         assert_eq!(parts, vec!["Damage 1.5"]);
-    }
-
-    #[test]
-    fn bubble_lines_merge_and_separate_bubbles_do_not() {
-        use super::group_bubbles;
-        use lumen_core::Rect;
-        use lumen_ocr::Recognition;
-        let rows = |pairs: &[(&str, i32, i32, u32)]| -> Vec<Recognition> {
-            pairs
-                .iter()
-                .map(|&(text, x, y, width)| Recognition {
-                    text: text.to_owned(),
-                    bounds: Rect::new(x, y, width, 14),
-                    confidence: 0.95,
-                })
-                .collect()
-        };
-        // One bubble: two rows, same column, two pixels apart.
-        let merged = group_bubbles(&rows(&[("Hold on", 40, 10, 120), ("Rick.", 52, 26, 60)]));
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].text, "Hold on Rick.");
-        assert_eq!(merged[0].rect, Rect::new(40, 10, 120, 30));
-        // Two bubbles: far apart, and side by side in different columns.
-        let apart = group_bubbles(&rows(&[
-            ("Hold on", 40, 10, 120),
-            ("Rick.", 52, 200, 60),
-            ("Right?", 400, 10, 80),
-        ]));
-        assert_eq!(apart.len(), 3);
-    }
-
-    #[test]
-    fn misread_stylised_lettering_is_not_english() {
-        use super::english_like;
-        assert!(!english_like("fwe'beaveyeu. !"));
-        assert!(english_like("When life gives you lemons, drink tequila"));
-        assert!(english_like("Hold on, Rick."));
-        assert!(english_like("I don't know what to do."));
-        assert!(english_like("Because we are together!"));
-    }
-
-    #[test]
-    fn transliterated_garbage_is_not_plausible_russian() {
-        use super::plausible_russian;
-        assert!(plausible_russian("Я не знаю, что делать."));
-        assert!(plausible_russian("Когда жизнь даёт тебе лимоны, пей текилу."));
-        assert!(!plausible_russian("МЭДОЛЕКЕНТОЕМОНЕГ"));
-        assert!(!plausible_russian("ВЕХИТАТХИКТАЛОФЕ"));
-        assert!(!plausible_russian("Вткоэдэг"));
     }
 
     #[test]
