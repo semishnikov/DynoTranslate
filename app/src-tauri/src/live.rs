@@ -13,8 +13,6 @@ use std::time::{Duration, Instant};
 
 use lumen_capture::{capture_window_picture, capture_window_screen, enumerate_targets};
 use lumen_core::{Frame, Rect};
-use lumen_ocr::windows::WindowsOcr;
-use lumen_ocr::OcrEngine;
 use lumen_overlay::windows::LayeredOverlay;
 use lumen_overlay::{Compositor, OverlayBlock, OverlayLayout, OverlayStyle, OverlaySurface};
 use lumen_render::FontWeight;
@@ -22,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::model::Translator;
+use crate::readtext::Reader;
 
 const MAX_OCR_WIDTH: u32 = 1280;
 const NEW_LINES_PER_TICK: usize = 4;
@@ -215,32 +214,43 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             }
         }
     };
-    let mut ocr = loop {
-        match std::panic::catch_unwind(WindowsOcr::new) {
-            Ok(Ok(ocr)) => break ocr,
+    let mut reader = loop {
+        let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut report = |note: &str| {
+                let (phase, title, detail) = describe_progress(note);
+                publish(&control, &app, view(&phase, &title, &detail));
+            };
+            Reader::load(&mut log_file, &mut report)
+        }));
+        match loaded {
+            Ok(Ok(reader)) => break reader,
             Ok(Err(error)) => {
-                let _ = writeln!(log_file, "ocr: {error}");
-                publish(
-                    &control,
-                    &app,
-                    view(
-                        "error",
-                        "Не могу читать текст",
-                        "На этой Windows нет распознавания текста. Список окон работает. Пробую ещё раз.",
-                    ),
-                );
-                wait(&control, &app, 4_000);
+                let _ = writeln!(log_file, "reader: {error}");
+                let downloading = error.contains("download") || error.contains("http");
+                let (title, detail) = if downloading {
+                    (
+                        "Распознавание не скачалось",
+                        "Нужен интернет. Список окон уже можно нажимать. Пробую ещё раз.",
+                    )
+                } else {
+                    (
+                        "Распознавание не открылось",
+                        "Список окон работает. Пробую ещё раз.",
+                    )
+                };
+                publish(&control, &app, view("error", title, detail));
+                wait(&control, &app, 8_000);
             }
             Err(error) => {
                 let text = panic_text(error.as_ref());
-                let _ = writeln!(log_file, "ocr panic: {text}");
+                let _ = writeln!(log_file, "reader panic: {text}");
                 publish(
                     &control,
                     &app,
                     view(
                         "error",
-                        "Не могу читать текст",
-                        "Распознавание упало. Список окон работает. Пробую ещё раз.",
+                        "Распознавание споткнулось",
+                        "Список окон работает. Пробую ещё раз.",
                     ),
                 );
                 wait(&control, &app, 4_000);
@@ -336,13 +346,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     }
                 }
 
-                let mut looking = view("watching", "Смотрю", "Ищу английский текст.");
+                let mut looking = view("watching", "Читаю", "Своё распознавание, Windows для этого не нужна.");
                 looking.watched = name.clone();
                 looking.capture = method.to_owned();
                 publish(&control, &app, looking);
 
                 let (small, scale) = downscale(&frame);
-                let lines = match ocr.recognize(&small, &[]) {
+                let lines = match reader.read(&small) {
                     Ok(lines) => lines,
                     Err(error) => {
                         log_once(&mut log_file, &mut last_log, &format!("ocr: {error}"));
@@ -350,7 +360,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                         let mut status = view(
                             "error",
                             "Не могу прочитать текст",
-                            "Распознавание сбилось. Пробую ещё раз.",
+                            &format!("Своё распознавание сбилось. Пробую ещё раз. {}", clip(&error, 90)),
                         );
                         status.watched = name;
                         status.capture = method.to_owned();
@@ -509,6 +519,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
 
 fn describe_progress(note: &str) -> (String, String, String) {
     if let Some((name, mb)) = note.split_once(':') {
+        if name.starts_with("ocr-") {
+            return (
+                "downloading".to_owned(),
+                "Скачиваю распознавание".to_owned(),
+                format!("Скачано {mb} МБ. Это один раз, Windows для этого не нужна."),
+            );
+        }
         let part = match name {
             "encoder.onnx" => "Первая часть",
             "decoder.onnx" => "Вторая часть",
@@ -536,6 +553,16 @@ fn describe_progress(note: &str) -> (String, String, String) {
             "preparing",
             "Готовлю перевод",
             "Первый запуск может занять минуту. Следующие будут быстрее.",
+        ),
+        "ocr-det.onnx" | "ocr-rec.onnx" => (
+            "downloading",
+            "Скачиваю распознавание",
+            "Это один раз. Нужен интернет. Windows для этого не нужна.",
+        ),
+        "ocr-sessions" => (
+            "preparing",
+            "Готовлю распознавание",
+            "Своё, не из Windows. Первый раз может занять минуту.",
         ),
         _ => (
             "downloading",
@@ -934,7 +961,7 @@ pub fn choose_window(control: &Control, app: &AppHandle, id: &str) {
     }
     if status.phase == "downloading" || status.phase == "preparing" {
         status.detail = format!(
-            "Выбрано «{}». Когда перевод будет готов, возьму это окно.",
+            "Выбрано «{}». Когда программа будет готова, возьму это окно.",
             chosen.title
         );
         publish(control, app, status);

@@ -9,6 +9,7 @@
 
 mod live;
 mod model;
+mod readtext;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
