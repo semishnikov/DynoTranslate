@@ -451,7 +451,11 @@ mod tests {
             24,
         );
         let ready = renderer.fit(&spec).expect("fit");
-        assert!(ready.fitted.size >= 24.0 * 0.6 - 0.01, "{}", ready.fitted.size);
+        assert!(
+            ready.fitted.size >= 24.0 * crate::MIN_FIT_SCALE - 0.01,
+            "{}",
+            ready.fitted.size
+        );
     }
 
     #[test]
@@ -531,7 +535,7 @@ mod tests {
         let mut renderer = renderer();
         let spec = TextSpec::new("メニューを開く", 40, 150, 20).with_writing(WritingMode::Vertical);
         let ready = renderer.fit(&spec).expect("fit");
-        assert!(ready.fitted.size >= 20.0 * 0.6 - 0.01);
+        assert!(ready.fitted.size >= 20.0 * crate::MIN_FIT_SCALE - 0.01);
     }
 
     #[test]

@@ -10,7 +10,7 @@
 //! comparison activates on the next run. Nothing else changes.
 
 use lumen_core::{Frame, Rect};
-use lumen_render::{draw_fitted, inpaint, FontWeight, Renderer, TextAlign, TextSpec, WritingMode};
+use lumen_render::{draw_fitted, inpaint, FontWeight, Renderer, TextAlign, TextSpec, WritingMode, MIN_FIT_SCALE};
 
 fn install_annotations() {
     use std::sync::Once;
@@ -63,7 +63,7 @@ fn a_tiny_box_never_reports_a_size_below_the_floor() {
     let spec = TextSpec::new("Pack my box with five dozen liquor jugs", 64, 18, 32);
     let ready = renderer.fit(&spec).expect("fit");
     assert!(
-        ready.fitted.size >= 32.0 * 0.8 - 0.01,
+        ready.fitted.size >= 32.0 * MIN_FIT_SCALE - 0.01,
         "size {} fell under the floor",
         ready.fitted.size
     );

@@ -202,7 +202,7 @@ mod tests {
         let text = "a".repeat(40);
         let spec = TextSpec::new(text, 100, 400, 16);
         let fitted = fit_text(&spec, fake_measure).unwrap();
-        assert!(fitted.size >= 16.0 * 0.6 - 0.001, "{}", fitted.size);
+        assert!(fitted.size >= 16.0 * MIN_FIT_SCALE - 0.001, "{}", fitted.size);
         assert!(fitted.size < 16.0);
     }
 
@@ -212,9 +212,9 @@ mod tests {
         let text = "b".repeat(80);
         let spec = TextSpec::new(text, 20, 20, 32);
         let fitted = fit_text(&spec, fake_measure).unwrap();
-        assert!((fitted.size - 32.0 * 0.6).abs() < 0.5, "{}", fitted.size);
+        assert!((fitted.size - 32.0 * MIN_FIT_SCALE).abs() < 0.5, "{}", fitted.size);
         assert!(fitted.at_floor);
-        assert!((fitted.scale - 0.6).abs() < 0.01);
+        assert!((fitted.scale - MIN_FIT_SCALE).abs() < 0.01);
     }
 
     #[test]
@@ -242,7 +242,7 @@ mod tests {
         let spec = TextSpec::new("W", 4, 40, 16);
         let fitted = fit_text(&spec, fake_measure).unwrap();
         assert!(fitted.size < 16.0);
-        assert!(fitted.size >= 16.0 * 0.6 - 0.001, "{}", fitted.size);
+        assert!(fitted.size >= 16.0 * MIN_FIT_SCALE - 0.001, "{}", fitted.size);
         assert!(fitted.at_floor);
     }
 
