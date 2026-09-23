@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 The goal does not change between sessions and is stated in full at the top of `docs/PLAN.md`:
 translate the text on screen in real time and draw it where it stands, so a foreign game or
@@ -241,10 +241,29 @@ hard-failing on the DirectML resource the shell job never copies (empty placehol
 `readtext`/`model`/`live` (`div_ceil`, enumerate, `matches!`, `?`, jagged test arrays, test
 module moved below the items it tests).
 
+After the owner's Rick & Morty comic test showed garbage translations over stylised
+lettering, black bars under every line and 4–5 second batches, the live loop changed shape
+on `65d14f2`: detected lines are grouped into bubbles (`group_bubbles`) so one translation
+covers a whole speech bubble, reads below 0.72 confidence are skipped and transliterated
+garbage is rejected (`plausible_russian`, rejections cached so they never re-run), plates
+sample their colour from the frame around the text (`plate_colors`) instead of a fixed dark
+bar, ONNX sessions use up to four intra-op threads (`model::ort_threads`), and translations
+stream three bubbles per tick with recomposition every 30 ms instead of one long blocking
+batch.
+
+Verified on `65d14f2`: CI run 35890197993 is green on all four jobs, including the new unit
+tests (`bubble_lines_merge_and_separate_bubbles_do_not`,
+`transliterated_garbage_is_not_plausible_russian`, `plates_take_the_background_and_readable_ink`).
+The Release run 35890197995 is green and uploads `installer-windows` (28,920,723 bytes).
+The on-screen result — delay, freeze, plate fit on the comic — is not verified here: no
+display, no Windows.
+
 ## Next
 
-1. **Owner tries the new installer** from Release run 35881580309 against the same Notepad
-   scene; if the on-screen result matches, this branch merges and M6 closes. Pull requests
+1. **Owner tries the new installer** from Release run 35890197995 on the same Rick & Morty
+   comic scene: expect one plate per bubble in the bubble's own colour, no translations over
+   stylised lettering, and plates appearing about a second after the frame changes instead
+   of a multi-second freeze. If it matches, this branch merges and M6 closes. Pull requests
    #11 and #12 stay closed to merging. The signing key and `UPDATER_PAT` wait until a public
    update exists.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
