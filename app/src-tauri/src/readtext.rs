@@ -97,8 +97,8 @@ impl Reader {
         let scale_y = frame.height() as f32 / map_h as f32;
         let frame_area = u64::from(frame.width()) * u64::from(frame.height());
         let mut scaled = Vec::new();
-        for box in boxes {
-            let grown = unclip(box);
+        for spot in boxes {
+            let grown = unclip(spot);
             let x = (grown.x as f32 * scale_x).floor() as i32 - 2;
             let y = (grown.y as f32 * scale_y).floor() as i32 - 2;
             let w = ((grown.width as f32 * scale_x).ceil() as u32).saturating_add(4);
@@ -361,7 +361,7 @@ fn components(map: &[f32], width: u32, height: u32) -> Vec<Rect> {
             }
         }
     }
-    boxes.sort_by_key(|box| std::cmp::Reverse(box.width.saturating_mul(box.height)));
+    boxes.sort_by_key(|spot| std::cmp::Reverse(spot.width.saturating_mul(spot.height)));
     boxes.truncate(40);
     boxes
 }
@@ -387,11 +387,11 @@ fn neighbor_count(x: u32, y: u32, width: u32, height: u32, out: &mut [(u32, u32)
     count
 }
 
-fn unclip(box: Rect) -> Rect {
-    let cx = box.x as f32 + box.width as f32 / 2.0;
-    let cy = box.y as f32 + box.height as f32 / 2.0;
-    let width = (box.width as f32 * 1.4).max(1.0);
-    let height = (box.height as f32 * 1.5).max(1.0);
+fn unclip(spot: Rect) -> Rect {
+    let cx = spot.x as f32 + spot.width as f32 / 2.0;
+    let cy = spot.y as f32 + spot.height as f32 / 2.0;
+    let width = (spot.width as f32 * 1.4).max(1.0);
+    let height = (spot.height as f32 * 1.5).max(1.0);
     Rect::new(
         (cx - width / 2.0).floor() as i32,
         (cy - height / 2.0).floor() as i32,
@@ -401,18 +401,18 @@ fn unclip(box: Rect) -> Rect {
 }
 
 fn group_lines(mut boxes: Vec<Rect>) -> Vec<Rect> {
-    boxes.sort_by_key(|box| box.y);
+    boxes.sort_by_key(|spot| spot.y);
     let mut lines = Vec::new();
-    for box in boxes {
+    for spot in boxes {
         if let Some(line) = lines.last_mut() {
-            let overlap = vertical_overlap(*line, box);
-            let slim = line.height.min(box.height) as i32;
+            let overlap = vertical_overlap(*line, spot);
+            let slim = line.height.min(spot.height) as i32;
             if slim > 0 && overlap * 2 > slim {
-                *line = line.union(&box);
+                *line = line.union(&spot);
                 continue;
             }
         }
-        lines.push(box);
+        lines.push(spot);
     }
     lines
 }
