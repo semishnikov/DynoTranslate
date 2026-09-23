@@ -84,6 +84,16 @@ fn set_paused(paused: bool, state: tauri::State<'_, live::Control>, app: tauri::
     live::set_paused(&state, &app, paused);
 }
 
+#[tauri::command]
+fn list_windows(state: tauri::State<'_, live::Control>) -> Vec<live::ListedWindow> {
+    live::list_windows(&state)
+}
+
+#[tauri::command]
+fn choose_window(id: String, state: tauri::State<'_, live::Control>, app: tauri::AppHandle) {
+    live::choose_window(&state, &app, &id);
+}
+
 fn main() {
     // The repository is private, so the updater authenticates its release downloads with
     // a read-only token baked in at build time (release.yml sets UPDATER_PAT from a
@@ -123,7 +133,9 @@ fn main() {
             set_shell_settings,
             live_status,
             live_preview,
-            set_paused
+            set_paused,
+            list_windows,
+            choose_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lumen shell");

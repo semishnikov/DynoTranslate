@@ -11,14 +11,14 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use lumen_capture::{capture_window_picture, capture_window_screen};
+use lumen_capture::{capture_window_picture, capture_window_screen, enumerate_targets};
 use lumen_core::{Frame, Rect};
 use lumen_ocr::windows::WindowsOcr;
 use lumen_ocr::OcrEngine;
 use lumen_overlay::windows::LayeredOverlay;
 use lumen_overlay::{Compositor, OverlayBlock, OverlayLayout, OverlayStyle, OverlaySurface};
 use lumen_render::FontWeight;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::model::Translator;
@@ -43,11 +43,21 @@ struct PreviewEvent {
     image: String,
 }
 
+#[derive(Clone)]
+struct Chosen {
+    id: u64,
+    title: String,
+    process: String,
+}
+
 struct Inner {
     paused: AtomicBool,
     translated: AtomicU32,
+    restored: AtomicBool,
     status: Mutex<LiveStatus>,
     preview: Mutex<String>,
+    choice: Mutex<Option<Chosen>>,
+    sticky: Mutex<Option<Chosen>>,
 }
 
 #[derive(Clone)]
@@ -65,17 +75,20 @@ pub fn control() -> Control {
         )
     } else {
         view(
-            "starting",
-            "Запускаю перевод",
-            "Секунду. Сейчас будет видно, что программа делает.",
+            "waiting",
+            "Выберите окно",
+            "Нажмите на него в списке. Выводить вперёд не нужно.",
         )
     };
     Control {
         inner: Arc::new(Inner {
             paused: AtomicBool::new(paused),
             translated: AtomicU32::new(0),
+            restored: AtomicBool::new(false),
             status: Mutex::new(status),
             preview: Mutex::new(String::new()),
+            choice: Mutex::new(None),
+            sticky: Mutex::new(None),
         }),
     }
 }
@@ -118,8 +131,8 @@ pub fn set_paused(control: &Control, app: &AppHandle, paused: bool) {
             app,
             view(
                 "waiting",
-                "Смотрю окна",
-                "Щёлкните по окну с английским текстом.",
+                "Выберите окно",
+                "Нажмите на него в списке. Выводить вперёд не нужно.",
             ),
         );
     } else {
@@ -128,22 +141,25 @@ pub fn set_paused(control: &Control, app: &AppHandle, paused: bool) {
 }
 
 pub fn run(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
-    let app_for_panic = app.clone();
-    let control_for_panic = control.clone();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        loop_forever(app, control, bundled);
-    }));
-    if let Err(error) = result {
-        let _ = log(&format!("loop panicked: {error:?}"));
-        publish(
-            &control_for_panic,
-            &app_for_panic,
-            view(
-                "error",
-                "Перевод остановился",
-                "Закройте программу и откройте её снова.",
-            ),
+    loop {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loop_forever(app.clone(), control.clone(), bundled.clone());
+        }));
+        let Err(error) = result else {
+            continue;
+        };
+        let text = panic_text(error.as_ref());
+        let _ = log(&format!("loop panicked: {text}"));
+        let mut status = view(
+            "error",
+            "Перевод споткнулся",
+            "Список окон работает. Выберите нужное — попробую ещё раз.",
         );
+        if !text.is_empty() {
+            status.detail = format!("{}. {text}", status.detail);
+        }
+        publish(&control, &app, status);
+        std::thread::sleep(Duration::from_secs(2));
     }
 }
 
@@ -155,57 +171,96 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
         let _ = log(&format!("pause hotkey: {error}"));
     }
 
-    let mut corner = StatusOverlay::new();
     let mut log_file = open_log();
     let mut translator = loop {
-        let loaded = {
+        let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut report = |note: &str| {
                 let (phase, title, detail) = describe_progress(note);
-                corner.show(&title);
                 publish(&control, &app, view(&phase, &title, &detail));
             };
             Translator::load(bundled.as_deref(), &mut log_file, &mut report)
-        };
+        }));
         match loaded {
-            Ok(translator) => break translator,
-            Err(error) => {
+            Ok(Ok(translator)) => break translator,
+            Ok(Err(error)) => {
                 let _ = writeln!(log_file, "model: {error}");
-                corner.show("Перевод не скачался");
                 publish(
                     &control,
                     &app,
                     view(
                         "error",
                         "Перевод не скачался",
-                        "Нужен интернет. Пробую ещё раз. Не закрывайте программу.",
+                        "Нужен интернет. Список окон уже можно нажимать. Пробую ещё раз.",
                     ),
                 );
                 wait(&control, &app, 8_000);
             }
+            Err(error) => {
+                let text = panic_text(error.as_ref());
+                let _ = writeln!(log_file, "model panic: {text}");
+                let mut status = view(
+                    "error",
+                    "Перевод не запустился",
+                    "Список окон работает. Выберите нужное — попробую ещё раз.",
+                );
+                if !text.is_empty() {
+                    status.detail = format!("{} {text}", status.detail);
+                }
+                publish(&control, &app, status);
+                wait(&control, &app, 4_000);
+            }
         }
     };
     let mut ocr = loop {
-        match WindowsOcr::new() {
-            Ok(ocr) => break ocr,
-            Err(error) => {
+        match std::panic::catch_unwind(WindowsOcr::new) {
+            Ok(Ok(ocr)) => break ocr,
+            Ok(Err(error)) => {
                 let _ = writeln!(log_file, "ocr: {error}");
-                corner.show("Не могу читать текст");
                 publish(
                     &control,
                     &app,
                     view(
                         "error",
                         "Не могу читать текст",
-                        "На этой Windows нет распознавания текста. Пробую ещё раз.",
+                        "На этой Windows нет распознавания текста. Список окон работает. Пробую ещё раз.",
+                    ),
+                );
+                wait(&control, &app, 4_000);
+            }
+            Err(error) => {
+                let text = panic_text(error.as_ref());
+                let _ = writeln!(log_file, "ocr panic: {text}");
+                publish(
+                    &control,
+                    &app,
+                    view(
+                        "error",
+                        "Не могу читать текст",
+                        "Распознавание упало. Список окон работает. Пробую ещё раз.",
                     ),
                 );
                 wait(&control, &app, 4_000);
             }
         }
     };
-    corner.hide();
 
-    let mut compositor = Compositor::new();
+    let mut compositor = match std::panic::catch_unwind(Compositor::new) {
+        Ok(compositor) => Some(compositor),
+        Err(error) => {
+            let text = panic_text(error.as_ref());
+            let _ = writeln!(log_file, "overlay panic: {text}");
+            publish(
+                &control,
+                &app,
+                view(
+                    "error",
+                    "Не могу рисовать поверх окон",
+                    "Текст всё равно покажу в этом окне. Выберите окно в списке.",
+                ),
+            );
+            None
+        }
+    };
     let mut overlay: Option<LayeredOverlay> = None;
     let mut cache: HashMap<String, String> = HashMap::new();
     let mut seen = 0u64;
@@ -230,35 +285,21 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             continue;
         }
 
-        match focus() {
-            Focus::Ours => {
-                clear(&mut overlay);
-                set_preview(&control, &app, String::new());
-                publish(
-                    &control,
-                    &app,
-                    view(
-                        "waiting",
-                        "Откройте текст",
-                        "Сейчас впереди это окно, его программа не переводит. Щёлкните по Блокноту или игре.",
-                    ),
-                );
-                std::thread::sleep(Duration::from_millis(200));
-                continue;
-            }
-            Focus::None => {
-                clear(&mut overlay);
-                set_preview(&control, &app, String::new());
-                publish(
-                    &control,
-                    &app,
-                    view("waiting", "Жду окно", "Щёлкните по окну с английским текстом."),
-                );
-                std::thread::sleep(Duration::from_millis(200));
-                continue;
-            }
-            Focus::Other { hwnd, title } => {
-                let name = title;
+        let Some((hwnd, name)) = resolve_target(&control) else {
+            clear(&mut overlay);
+            publish(
+                &control,
+                &app,
+                view(
+                    "waiting",
+                    "Выберите окно",
+                    "Нажмите на него в списке. Выводить вперёд не нужно.",
+                ),
+            );
+            std::thread::sleep(Duration::from_millis(200));
+            continue;
+        };
+        {
                 let captured = match capture(hwnd) {
                     Ok(captured) => captured,
                     Err(error) => {
@@ -268,7 +309,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                         let mut status = view(
                             "error",
                             "Не вижу это окно",
-                            "Оно не отдаёт картинку. Запустите его в обычном окне, не на весь экран.",
+                            "Оно не отдаёт картинку. Выберите другое в списке или откройте его обычным окном, не на весь экран.",
                         );
                         status.watched = name;
                         publish(&control, &app, status);
@@ -422,6 +463,20 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     continue;
                 };
                 let layout = OverlayLayout::new(OverlayStyle::Plate).with_blocks(blocks);
+                let Some(compositor) = compositor.as_mut() else {
+                    let mut status = view(
+                        "translating",
+                        "Перевожу",
+                        "Русский текст виден в этом окне. Поверх чужого окна нарисовать не получилось.",
+                    );
+                    status.watched = name;
+                    status.capture = method.to_owned();
+                    status.sample = sample;
+                    publish(&control, &app, status);
+                    seen = fingerprint;
+                    std::thread::sleep(Duration::from_millis(160));
+                    continue;
+                };
                 let composition = compositor.compose(&frame, &layout);
                 if surface.present(&composition.frame, &composition.damage).is_err() {
                     overlay = None;
@@ -444,7 +499,6 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 publish(&control, &app, status);
                 seen = fingerprint;
                 std::thread::sleep(Duration::from_millis(160));
-            }
         }
     }
 }
@@ -630,6 +684,9 @@ fn clip(text: &str, limit: usize) -> String {
 }
 
 fn preview_data_url(frame: &Frame) -> String {
+    if frame.width() == 0 || frame.height() == 0 {
+        return String::new();
+    }
     let (width, height, scale) = preview_size(frame.width(), frame.height());
     let row_stride = ((width * 3 + 3) / 4) * 4;
     let pixel_bytes = row_stride * height;
@@ -761,7 +818,7 @@ fn clear(overlay: &mut Option<LayeredOverlay>) {
 }
 
 fn downscale(frame: &Frame) -> (Frame, f32) {
-    if frame.width() <= MAX_OCR_WIDTH {
+    if frame.width() == 0 || frame.height() == 0 || frame.width() <= MAX_OCR_WIDTH {
         return (frame.clone(), 1.0);
     }
     let scale = frame.width() as f32 / MAX_OCR_WIDTH as f32;
@@ -807,42 +864,207 @@ fn fingerprint_of(hwnd: isize, frame: &Frame, bounds: Rect) -> u64 {
     hash
 }
 
-struct StatusOverlay {
-    surface: Option<LayeredOverlay>,
-    compositor: Compositor,
+#[derive(Clone, Serialize)]
+pub struct ListedWindow {
+    pub id: String,
+    pub title: String,
+    pub process: String,
+    pub selected: bool,
 }
 
-impl StatusOverlay {
-    fn new() -> Self {
-        Self {
-            surface: None,
-            compositor: Compositor::new(),
+pub fn list_windows(control: &Control) -> Vec<ListedWindow> {
+    restore_choice_once(control);
+    let selected = lock(&control.inner.choice).as_ref().map(|chosen| chosen.id);
+    let ours = our_process_name();
+    let mut windows: Vec<ListedWindow> = open_windows()
+        .into_iter()
+        .filter(|target| !is_ours(&target.title, &target.process, &ours))
+        .map(|target| ListedWindow {
+            id: target.id.to_string(),
+            title: clip(&target.title, 80),
+            process: friendly_process(&target.process),
+            selected: selected == Some(target.id),
+        })
+        .collect();
+    windows.sort_by_key(|window| !window.selected);
+    windows.truncate(16);
+    windows
+}
+
+pub fn choose_window(control: &Control, app: &AppHandle, id: &str) {
+    if id.is_empty() {
+        *lock(&control.inner.choice) = None;
+        save_choice("", "");
+        let current = control.status();
+        if !current.paused && !matches!(current.phase.as_str(), "downloading" | "preparing" | "error") {
+            publish(
+                control,
+                app,
+                view(
+                    "waiting",
+                    "Само",
+                    "Беру окно, которое было впереди. Надёжнее нажать нужное в списке.",
+                ),
+            );
+        }
+        return;
+    }
+    let Ok(parsed) = id.parse::<u64>() else {
+        return;
+    };
+    let Some(found) = open_windows().into_iter().find(|target| target.id == parsed) else {
+        return;
+    };
+    let chosen = Chosen {
+        id: found.id,
+        title: clip(&found.title, 80),
+        process: found.process,
+    };
+    save_choice(&chosen.title, &chosen.process);
+    *lock(&control.inner.choice) = Some(chosen.clone());
+    let mut status = control.status();
+    status.watched = chosen.title.clone();
+    if status.paused {
+        publish(control, app, status);
+        return;
+    }
+    if status.phase == "downloading" || status.phase == "preparing" {
+        status.detail = format!(
+            "Выбрано «{}». Когда перевод будет готов, возьму это окно.",
+            chosen.title
+        );
+        publish(control, app, status);
+        return;
+    }
+    if status.phase == "error" {
+        status.detail = format!(
+            "«{}» выбрано. Как только перевод поднимется, возьму это окно.",
+            chosen.title
+        );
+        publish(control, app, status);
+        return;
+    }
+    status.phase = "watching".to_owned();
+    status.title = "Смотрю".to_owned();
+    status.detail = "Это окно выбрано. Выводить его вперёд не нужно.".to_owned();
+    publish(control, app, status);
+}
+
+fn resolve_target(control: &Control) -> Option<(isize, String)> {
+    restore_choice_once(control);
+    let chosen = lock(&control.inner.choice).clone();
+    if let Some(chosen) = chosen {
+        if window_alive(chosen.id) {
+            return Some((chosen.id as isize, chosen.title));
+        }
+        if let Some(found) = find_match(&chosen.title, &chosen.process) {
+            let title = found.title.clone();
+            let id = found.id;
+            *lock(&control.inner.choice) = Some(found);
+            return Some((id as isize, title));
+        }
+        *lock(&control.inner.choice) = None;
+        return None;
+    }
+    match focus() {
+        Focus::Other { hwnd, title } => {
+            *lock(&control.inner.sticky) = Some(Chosen {
+                id: hwnd as u64,
+                title: title.clone(),
+                process: String::new(),
+            });
+            Some((hwnd, title))
+        }
+        Focus::Ours | Focus::None => {
+            let sticky = lock(&control.inner.sticky).clone();
+            let Some(sticky) = sticky else {
+                return None;
+            };
+            if window_alive(sticky.id) {
+                Some((sticky.id as isize, sticky.title))
+            } else {
+                *lock(&control.inner.sticky) = None;
+                None
+            }
         }
     }
+}
 
-    fn show(&mut self, text: &str) {
-        let bounds = Rect::new(48, 48, 520, 56);
-        if self.surface.is_none() {
-            self.surface = LayeredOverlay::create(bounds).ok();
-        }
-        let Some(surface) = self.surface.as_mut() else {
+fn restore_choice_once(control: &Control) {
+    if control.inner.restored.load(Ordering::SeqCst) {
+        return;
+    }
+    let saved = read_saved();
+    if saved.title.is_empty() {
+        control.inner.restored.store(true, Ordering::SeqCst);
+        return;
+    }
+    let Some(found) = find_match(&saved.title, &saved.process) else {
+        if open_windows().is_empty() {
             return;
-        };
-        let frame = Frame::filled(bounds.width, bounds.height, [0, 0, 0, 0]).expect("status size");
-        let block = OverlayBlock::new(Rect::new(0, 8, bounds.width, 40), text)
-            .with_font(18, FontWeight::Regular, false)
-            .with_colors([20, 20, 20, 240], [244, 244, 244, 255]);
-        let layout = OverlayLayout::new(OverlayStyle::Plate).with_blocks(vec![block]);
-        let composition = self.compositor.compose(&frame, &layout);
-        let _ = surface.present(&composition.frame, &composition.damage);
-    }
-
-    fn hide(&mut self) {
-        if let Some(surface) = self.surface.as_mut() {
-            let _ = surface.clear();
         }
-        self.surface = None;
+        control.inner.restored.store(true, Ordering::SeqCst);
+        return;
+    };
+    control.inner.restored.store(true, Ordering::SeqCst);
+    *lock(&control.inner.choice) = Some(found);
+}
+
+fn find_match(title: &str, process: &str) -> Option<Chosen> {
+    open_windows().into_iter().find(|target| target.title == title && process_matches(&target.process, process)).map(|target| Chosen {
+        id: target.id,
+        title: clip(&target.title, 80),
+        process: target.process,
+    })
+}
+
+fn process_matches(current: &str, saved: &str) -> bool {
+    saved.is_empty() || current.eq_ignore_ascii_case(saved)
+}
+
+fn open_windows() -> Vec<lumen_capture::CaptureTarget> {
+    match std::panic::catch_unwind(enumerate_targets) {
+        Ok(Ok(targets)) => targets,
+        _ => Vec::new(),
     }
+}
+
+fn window_alive(id: u64) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::IsWindow;
+    if id == 0 {
+        return false;
+    }
+    unsafe { IsWindow(HWND(id as *mut std::ffi::c_void)) }.as_bool()
+}
+
+fn our_process_name() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "DynoTranslate.exe".to_owned())
+}
+
+fn is_ours(title: &str, process: &str, ours: &str) -> bool {
+    title == "DynoTranslate"
+        || title == "Program Manager"
+        || process.eq_ignore_ascii_case(ours)
+        || process.eq_ignore_ascii_case("DynoTranslate.exe")
+}
+
+fn friendly_process(process: &str) -> String {
+    process.trim_end_matches(".exe").trim_end_matches(".EXE").to_owned()
+}
+
+fn panic_text(error: &(dyn std::any::Any + Send)) -> String {
+    let raw = if let Some(text) = error.downcast_ref::<&str>() {
+        (*text).to_owned()
+    } else if let Some(text) = error.downcast_ref::<String>() {
+        text.clone()
+    } else {
+        String::new()
+    };
+    clip(&raw.replace(['\n', '\r'], " "), 140)
 }
 
 fn data_dir() -> PathBuf {
@@ -852,17 +1074,46 @@ fn data_dir() -> PathBuf {
         .join("DynoTranslate")
 }
 
+#[derive(Clone, Serialize, Deserialize, Default)]
+struct Saved {
+    #[serde(default)]
+    paused: bool,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    process: String,
+}
+
 fn load_paused() -> bool {
-    let Ok(text) = std::fs::read_to_string(data_dir().join("state.json")) else {
-        return false;
-    };
-    text.contains("\"paused\":true") || text.contains("\"paused\": true")
+    read_saved().paused
 }
 
 fn save_paused(paused: bool) {
+    let mut saved = read_saved();
+    saved.paused = paused;
+    write_saved(&saved);
+}
+
+fn save_choice(title: &str, process: &str) {
+    let mut saved = read_saved();
+    saved.title = title.to_owned();
+    saved.process = process.to_owned();
+    write_saved(&saved);
+}
+
+fn read_saved() -> Saved {
+    let Ok(text) = std::fs::read_to_string(data_dir().join("state.json")) else {
+        return Saved::default();
+    };
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+fn write_saved(saved: &Saved) {
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(dir.join("state.json"), format!("{{\"paused\":{paused}}}\n"));
+    if let Ok(text) = serde_json::to_string(saved) {
+        let _ = std::fs::write(dir.join("state.json"), text);
+    }
 }
 
 fn open_log() -> std::fs::File {
@@ -877,7 +1128,13 @@ fn open_log() -> std::fs::File {
 
 fn fallback_log() -> std::fs::File {
     let path = std::env::temp_dir().join("dynotranslate-live.log");
-    std::fs::File::create(path).expect("log")
+    if let Ok(file) = std::fs::File::create(&path) {
+        return file;
+    }
+    OpenOptions::new()
+        .write(true)
+        .open("NUL")
+        .unwrap_or_else(|_| std::fs::File::create(path).unwrap_or_else(|_| std::fs::File::open("NUL").expect("log")))
 }
 
 fn log(message: &str) -> std::io::Result<()> {
