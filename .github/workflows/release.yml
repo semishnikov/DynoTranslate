@@ -153,9 +153,6 @@ jobs:
             exit 1
           fi
           ls -l src-tauri/resources/DirectML.dll
-          # A stripped Windows cannot install the window library. Carry a private
-          # copy so the program does not look for the broken system one.
-          bash src-tauri/fetch-webview.sh
           set +e
           (cd src-tauri && cargo build --release) > runtime-build.txt 2>&1
           code=$?

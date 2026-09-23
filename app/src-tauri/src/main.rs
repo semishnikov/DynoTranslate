@@ -69,6 +69,21 @@ fn set_shell_settings(
     current.clone()
 }
 
+#[tauri::command]
+fn live_status(state: tauri::State<'_, live::Control>) -> live::LiveStatus {
+    state.status()
+}
+
+#[tauri::command]
+fn live_preview(state: tauri::State<'_, live::Control>) -> String {
+    state.preview()
+}
+
+#[tauri::command]
+fn set_paused(paused: bool, state: tauri::State<'_, live::Control>, app: tauri::AppHandle) {
+    live::set_paused(&state, &app, paused);
+}
+
 fn main() {
     // The repository is private, so the updater authenticates its release downloads with
     // a read-only token baked in at build time (release.yml sets UPDATER_PAT from a
@@ -88,13 +103,28 @@ fn main() {
         .manage(std::sync::Mutex::new(ShellSettings::default()))
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.minimize();
+                let _ = window.unmaximize();
+                let _ = window.unminimize();
+                let _ = window.set_size(tauri::LogicalSize::new(680.0, 760.0));
+                let _ = window.center();
+                let _ = window.show();
+                let _ = window.set_focus();
             }
             let bundled = app.path().resource_dir().ok();
-            std::thread::spawn(move || live::run(bundled));
+            let app_handle = app.handle().clone();
+            let control = live::control();
+            app.manage(control.clone());
+            std::thread::spawn(move || live::run(app_handle, control, bundled));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ping, get_shell_settings, set_shell_settings])
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            get_shell_settings,
+            set_shell_settings,
+            live_status,
+            live_preview,
+            set_paused
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Lumen shell");
 }

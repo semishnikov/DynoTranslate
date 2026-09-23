@@ -28,11 +28,16 @@ pub struct Translator {
 }
 
 impl Translator {
-    pub fn load(bundled: Option<&Path>, log: &mut dyn Write) -> Result<Self, String> {
+    pub fn load(
+        bundled: Option<&Path>,
+        log: &mut dyn Write,
+        mut report: impl FnMut(&str),
+    ) -> Result<Self, String> {
         let dir = model_dir(bundled)?;
-        let encoder_path = ensure(&dir, "encoder.onnx", ENCODER_URL, 8_000_000, log)?;
-        let decoder_path = ensure(&dir, "decoder.onnx", DECODER_URL, 8_000_000, log)?;
-        let tokenizer_path = ensure(&dir, "tokenizer.json", TOKENIZER_URL, 50_000, log)?;
+        let encoder_path = ensure(&dir, "encoder.onnx", ENCODER_URL, 8_000_000, log, &mut report)?;
+        let decoder_path = ensure(&dir, "decoder.onnx", DECODER_URL, 8_000_000, log, &mut report)?;
+        let tokenizer_path = ensure(&dir, "tokenizer.json", TOKENIZER_URL, 50_000, log, &mut report)?;
+        report("sessions");
 
         let _ = writeln!(log, "loading sessions");
         let encoder = Session::builder()
@@ -185,14 +190,27 @@ fn model_dir(bundled: Option<&Path>) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn ensure(dir: &Path, name: &str, url: &str, minimum: u64, log: &mut dyn Write) -> Result<PathBuf, String> {
+fn ensure(
+    dir: &Path,
+    name: &str,
+    url: &str,
+    minimum: u64,
+    log: &mut dyn Write,
+    report: &mut dyn FnMut(&str),
+) -> Result<PathBuf, String> {
     let path = dir.join(name);
     if file_ok(&path, minimum) {
         return Ok(path);
     }
     let _ = writeln!(log, "downloading {name}");
+    report(name);
     let partial = dir.join(format!("{name}.partial"));
-    if let Err(error) = download(url, &partial) {
+    if let Err(error) = download(url, &partial, &mut |bytes| {
+        let mb = bytes / (1024 * 1024);
+        if mb > 0 {
+            report(&format!("{name}:{mb}"));
+        }
+    }) {
         let _ = fs::remove_file(&partial);
         return Err(format!("download {name}: {error}"));
     }
@@ -204,7 +222,7 @@ fn ensure(dir: &Path, name: &str, url: &str, minimum: u64, log: &mut dyn Write) 
     Ok(path)
 }
 
-fn download(url: &str, path: &Path) -> Result<(), String> {
+fn download(url: &str, path: &Path, progress: &mut dyn FnMut(u64)) -> Result<(), String> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(20))
         .timeout_read(Duration::from_secs(180))
@@ -218,12 +236,19 @@ fn download(url: &str, path: &Path) -> Result<(), String> {
     let mut reader = response.into_reader();
     let mut file = File::create(path).map_err(|error| error.to_string())?;
     let mut buffer = [0u8; 64 * 1024];
+    let mut total = 0u64;
+    let mut reported = 0u64;
     loop {
         let read = reader.read(&mut buffer).map_err(|error| error.to_string())?;
         if read == 0 {
             break;
         }
         file.write_all(&buffer[..read]).map_err(|error| error.to_string())?;
+        total += read as u64;
+        if total - reported >= 1024 * 1024 {
+            reported = total;
+            progress(total);
+        }
     }
     file.flush().map_err(|error| error.to_string())
 }

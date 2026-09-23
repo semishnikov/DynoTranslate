@@ -1,178 +1,179 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
-import { Home } from "./screens/Home";
-import { Apps } from "./screens/Apps";
-import { Packs } from "./screens/Packs";
-import { Region } from "./screens/Region";
-import { Settings } from "./screens/Settings";
-import { Onboarding } from "./screens/Onboarding";
-import { useT, type MessageKey } from "./i18n";
-import { useStore } from "./state/store";
-import { useHotkeys, useSyncI18nWithStore } from "./state/hotkeys";
 
-type Route = "home" | "apps" | "packs" | "region" | "settings";
+type LiveStatus = {
+  phase: string;
+  title: string;
+  detail: string;
+  watched: string;
+  capture: string;
+  sample: string;
+  paused: boolean;
+  translated: number;
+};
 
-const nav: { id: Route; labelKey: MessageKey; icon: ReactNode }[] = [
-  {
-    id: "home",
-    labelKey: "nav.home",
-    icon: (
-      <path d="M3 9.5 10 4l7 5.5V16a1 1 0 0 1-1 1h-4v-4H8v4H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-    ),
-  },
-  {
-    id: "apps",
-    labelKey: "nav.apps",
-    icon: (
-      <g fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3.25" y="3.25" width="5.5" height="5.5" rx="1.5" />
-        <rect x="11.25" y="3.25" width="5.5" height="5.5" rx="1.5" />
-        <rect x="3.25" y="11.25" width="5.5" height="5.5" rx="1.5" />
-        <rect x="11.25" y="11.25" width="5.5" height="5.5" rx="1.5" />
-      </g>
-    ),
-  },
-  {
-    id: "packs",
-    labelKey: "nav.packs",
-    icon: (
-      <g fill="none" stroke="currentColor" strokeWidth="1.5">
-        <circle cx="10" cy="10" r="6.75" />
-        <path d="M3.4 10h13.2M10 3.3c1.8 2 2.7 4.3 2.7 6.7s-.9 4.7-2.7 6.7c-1.8-2-2.7-4.3-2.7-6.7s.9-4.7 2.7-6.7z" />
-      </g>
-    ),
-  },
-  {
-    id: "region",
-    labelKey: "nav.region",
-    icon: (
-      <g fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M4 7V5a1 1 0 0 1 1-1h2M13 4h2a1 1 0 0 1 1 1v2M16 13v2a1 1 0 0 1-1 1h-2M7 16H5a1 1 0 0 1-1-1v-2" strokeLinecap="round" />
-        <rect x="7" y="7" width="6" height="6" rx="1" />
-      </g>
-    ),
-  },
-  {
-    id: "settings",
-    labelKey: "nav.settings",
-    icon: (
-      <g fill="none" stroke="currentColor" strokeWidth="1.5">
-        <circle cx="10" cy="10" r="2.6" />
-        <path d="M10 2.8v1.7M10 15.5v1.7M17.2 10h-1.7M4.5 10H2.8M15.1 4.9l-1.2 1.2M6.1 13.9l-1.2 1.2M15.1 15.1l-1.2-1.2M6.1 6.1 4.9 4.9" strokeLinecap="round" />
-      </g>
-    ),
-  },
-];
+const STARTING: LiveStatus = {
+  phase: "starting",
+  title: "Запускаю перевод",
+  detail: "Секунду. Сейчас будет видно, что программа делает.",
+  watched: "",
+  capture: "",
+  sample: "",
+  paused: false,
+  translated: 0,
+};
+
+function onDesktop(): boolean {
+  return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+}
+
+function sampleParts(sample: string): { from: string; to: string } | null {
+  const split = sample.split(" → ");
+  if (split.length < 2 || !split[0] || !split[1]) {
+    return null;
+  }
+  return { from: split[0], to: split.slice(1).join(" → ") };
+}
 
 export default function App() {
-  const t = useT();
-  const [route, setRoute] = useState<Route>("home");
-  const theme = useStore((state) => state.theme);
-  const uiScale = useStore((state) => state.uiScale);
-  const toast = useStore((state) => state.toast);
-  const notify = useStore((state) => state.notify);
-  const running = useStore((state) => state.running);
-  const toggleRunning = useStore((state) => state.toggleRunning);
-  const onboardingDone = useStore((state) => state.onboardingDone);
-  const hotkeysEnabled = useStore((state) => state.hotkeysEnabled);
-
-  useSyncI18nWithStore();
+  const [status, setStatus] = useState<LiveStatus>(STARTING);
+  const [preview, setPreview] = useState("");
+  const [broken, setBroken] = useState(false);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    if (!onDesktop()) {
+      return;
+    }
+    let stop = false;
+    let misses = 0;
+    const apply = (next: LiveStatus) => {
+      if (!stop) {
+        setStatus(next);
+        setBroken(false);
+      }
+    };
+    const pull = async () => {
+      try {
+        apply(await invoke<LiveStatus>("live_status"));
+        misses = 0;
+      } catch {
+        misses += 1;
+        if (misses >= 3 && !stop) {
+          setBroken(true);
+        }
+      }
+    };
+    void pull();
+    void invoke<string>("live_preview")
+      .then((image) => {
+        if (!stop && image) {
+          setPreview(image);
+        }
+      })
+      .catch(() => undefined);
+    const timer = window.setInterval(() => void pull(), 1000);
+    const unlistenStatus = listen<LiveStatus>("live-status", (event) => apply(event.payload));
+    const unlistenPreview = listen<{ image: string }>("live-preview", (event) => {
+      if (!stop) {
+        setPreview(event.payload.image);
+      }
+    });
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+      void unlistenStatus.then((stopListening) => stopListening());
+      void unlistenPreview.then((stopListening) => stopListening());
+    };
+  }, []);
 
-  useEffect(() => {
-    document.documentElement.style.fontSize = `${(uiScale / 100) * 16}px`;
-  }, [uiScale]);
+  async function togglePause() {
+    const next = !status.paused;
+    setStatus({
+      ...status,
+      paused: next,
+      phase: next ? "paused" : status.phase === "paused" ? "waiting" : status.phase,
+      title: next ? "Пауза" : status.title,
+      detail: next ? "Перевод спрятан. Нажмите «Продолжить» или Alt+T." : status.detail,
+    });
+    try {
+      await invoke("set_paused", { paused: next });
+    } catch {
+      setBroken(true);
+    }
+  }
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => notify(null), 3200);
-    return () => window.clearTimeout(timer);
-  }, [toast, notify]);
-
-  const handlers = useMemo(
-    () => ({
-      toggleOverlay: { run: toggleRunning },
-      peekOriginal: {
-        run: () => undefined,
-        hold: true,
-      },
-      openShell: { run: () => notify(t("hotkey.toggleUnavailable")) },
-      gotoHome: { run: () => setRoute("home") },
-      gotoApps: { run: () => setRoute("apps") },
-      gotoPacks: { run: () => setRoute("packs") },
-      gotoRegion: { run: () => setRoute("region") },
-      gotoSettings: { run: () => setRoute("settings") },
-    }),
-    [toggleRunning, notify, t],
-  );
-
-  useHotkeys(hotkeysEnabled && onboardingDone, handlers);
-
-  const finishOnboarding = () => {
-    notify(t("toast.onboardingDone"));
-    setRoute("home");
-  };
+  const sample = sampleParts(status.sample);
+  const canPause =
+    status.paused || ["waiting", "watching", "translating", "paused"].includes(status.phase);
+  const shown = broken
+    ? {
+        ...status,
+        phase: "error",
+        title: "Окно не видит перевод",
+        detail: "Закройте программу и откройте её снова.",
+      }
+    : status;
 
   return (
-    <div className="shell">
-      <a className="skip-link" href="#main-content">
-        {t("nav.skip")}
-      </a>
+    <main className="stage" data-phase={shown.phase}>
+      <header className="brand-row">
+        <p className="brand">
+          DynoTranslate <span>перевод на экране</span>
+        </p>
+        {shown.translated > 0 ? (
+          <p className="count">Переведено строк: {shown.translated}</p>
+        ) : null}
+      </header>
 
-      <aside className="sidebar">
-        <div className="brand">
-          <svg viewBox="0 0 28 28" width="26" height="26" aria-hidden="true" className="brand__mark">
-            <rect x="2" y="2" width="24" height="24" rx="8" fill="var(--accent)" />
-            <path d="M9 19.2 13 8.8h2.2l4 10.4h-2.3l-.9-2.5h-4l-.9 2.5z" fill="var(--accent-fg)" />
-            <path d="M12.6 14.9h2.6L13.9 11z" fill="var(--accent)" />
-          </svg>
-          <div>
-            <p className="brand__name">{t("app.name")}</p>
-            <p className="brand__sub">{t("app.tagline")}</p>
+      <section className="preview" aria-label="Окно, которое программа смотрит">
+        {preview ? (
+          <img src={preview} alt="Картинка окна, которое программа сейчас смотрит" />
+        ) : (
+          <p className="preview__empty">
+            Здесь появится картинка окна. Способ захвата программа выбирает сама.
+          </p>
+        )}
+        <p className="preview__caption">
+          {shown.watched
+            ? `Смотрю: ${shown.watched}${shown.capture ? ` · ${shown.capture}` : ""}`
+            : "Пока ни одно окно. Щёлкните по Блокноту или игре."}
+        </p>
+      </section>
+
+      <section className="status" aria-live="polite">
+        <h1>
+          <span className="dot" aria-hidden="true" />
+          {shown.title}
+        </h1>
+        <p>{shown.detail}</p>
+        {sample ? (
+          <div className="sample">
+            <p className="sample__from">{sample.from}</p>
+            <p className="sample__to">{sample.to}</p>
           </div>
-        </div>
-        <nav className="nav" aria-label={t("app.name")}>
-          {nav.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={route === item.id ? "nav__item nav__item--active" : "nav__item"}
-              aria-current={route === item.id ? "page" : undefined}
-              onClick={() => setRoute(item.id)}
-            >
-              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-                {item.icon}
-              </svg>
-              {t(item.labelKey)}
-            </button>
-          ))}
-        </nav>
-        <footer className="sidebar__foot">
-          <p>{t("app.version")}</p>
-          <p>{t("app.offline")}</p>
-        </footer>
-      </aside>
+        ) : null}
+        {canPause ? (
+          <button type="button" className="pause" onClick={() => void togglePause()}>
+            {shown.paused ? "Продолжить" : "Пауза"}
+            <span>Alt+T</span>
+          </button>
+        ) : null}
+      </section>
 
-      <main className="content" id="main-content" key={route} tabIndex={-1}>
-        {route === "home" ? <Home /> : null}
-        {route === "apps" ? <Apps /> : null}
-        {route === "packs" ? <Packs /> : null}
-        {route === "region" ? <Region /> : null}
-        {route === "settings" ? <Settings /> : null}
-      </main>
-
-      <div className="toast-region" aria-live="polite">
-        {toast ? <div className="toast">{toast}</div> : null}
-      </div>
-
-      <p className="sr-only" aria-live="polite">
-        {running ? t("home.on") : t("home.off")}
-      </p>
-
-      {!onboardingDone ? <Onboarding onFinished={finishOnboarding} /> : null}
-    </div>
+      <section className="steps">
+        <h2>Как проверить</h2>
+        <ol>
+          <li>Оставьте это окно открытым, чтобы видеть, что происходит.</li>
+          <li>Откройте Блокнот, напишите английскую фразу крупными буквами и щёлкните по нему.</li>
+          <li>Русский должен появиться поверх текста. В игре то же самое: обычное окно, не весь экран.</li>
+        </ol>
+        <p className="limit">
+          Сейчас перевожу английский на русский. Язык выбирать не нужно. Если текст на другом языке,
+          здесь будет написано, что его пропускаю.
+        </p>
+      </section>
+    </main>
   );
 }
