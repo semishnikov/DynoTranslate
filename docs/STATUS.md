@@ -283,6 +283,15 @@ the compositor erases the original and draws the translation in its place. Verif
 `installer-windows` (28,994,678 bytes). The on-screen result is not verified here: no display,
 no Windows — the owner turns the gears and reports back.
 
+`a26cd3f` answers the owner's footprint and journal demands: everything the app writes lives
+under `%LOCALAPPDATA%\DynoTranslate` (journal, settings, state, models, pruned frame
+snapshots, and the WebView2 profile via `WEBVIEW2_USER_DATA_FOLDER`; the temp-dir log fallback
+is gone), `live.log` is truncated on every launch, opens with a session header (version,
+folder, full settings JSON), logs every settings change, and each scene change saves the exact
+OCR input as `frames/NNNN.bmp` (newest eight kept) so a bug report needs no screenshots.
+Verified on `a26cd3f`: CI run 35913186877 green on all four jobs, Release run 35913186879
+uploads `installer-windows` (28,998,836 bytes).
+
 ## Next
 
 1. **Owner tries the new installer** from Release run 35890197995 on the same Rick & Morty
