@@ -205,19 +205,6 @@ impl Compositor {
                 continue;
             };
 
-            if block.needs_plate(layout.style) {
-                let alpha = apply_opacity(block.background[3], layout.opacity);
-                let fill = [block.background[0], block.background[1], block.background[2], alpha];
-                frame.fill_rect(rect, fill);
-            } else {
-                // Seamless: reconstruct the surface the original text sat on, then write it
-                // opaque so the layered window covers the source glyphs completely.
-                erase(source, frame, rect);
-                if layout.opacity < 1.0 {
-                    dim_rect(frame, rect, layout.opacity);
-                }
-            }
-
             let origin = (rect.x, rect.y);
             let spec = TextSpec::new(
                 block.text.clone(),
@@ -229,15 +216,39 @@ impl Compositor {
             .with_italic(block.italic)
             .with_align(block.align)
             .with_writing(block.writing);
+            let ready = self.renderer.fit(&spec).ok();
 
-            if let Ok(ready) = self.renderer.fit(&spec) {
+            // The plate hugs the typeset translation: the original's width, grown downwards only
+            // when the text had to stack, so a short label never becomes a window-wide bar.
+            let mut plate = rect;
+            if let Some(ready) = &ready {
+                let ink_bottom = ready.ink_bounds.y + ready.ink_bounds.height as i32;
+                if ink_bottom > rect.height as i32 {
+                    plate = Rect::new(rect.x, rect.y, rect.width, ink_bottom as u32);
+                }
+            }
+
+            if block.needs_plate(layout.style) {
+                let alpha = apply_opacity(block.background[3], layout.opacity);
+                let fill = [block.background[0], block.background[1], block.background[2], alpha];
+                frame.fill_rect(plate, fill);
+            } else {
+                // Seamless: reconstruct the surface the original text sat on, then write it
+                // opaque so the layered window covers the source glyphs completely.
+                erase(source, frame, rect);
+                if layout.opacity < 1.0 {
+                    dim_rect(frame, rect, layout.opacity);
+                }
+            }
+
+            if let Some(ready) = ready {
                 let ink = self
                     .renderer
                     .draw(frame, &ready, origin, block.foreground, block.outline, layout.opacity);
-                let covered = rect.union(&ink.clamp_to(&bounds).unwrap_or(rect));
+                let covered = plate.union(&ink.clamp_to(&bounds).unwrap_or(plate));
                 painted.push(covered);
             } else {
-                painted.push(rect);
+                painted.push(plate);
             }
         }
         coalesce(painted)
