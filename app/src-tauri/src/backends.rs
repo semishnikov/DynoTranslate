@@ -132,7 +132,7 @@ fn openai(lines: &[String], context: &[(String, String)], settings: &LiveSetting
         for (source, target) in context {
             user.push_str(&format!("EN: {source}\nRU: {target}\n"));
         }
-        user.push_str("\n");
+        user.push('\n');
     }
     user.push_str("LINES (one screen, one moment):\n");
     for (index, line) in lines.iter().enumerate() {
