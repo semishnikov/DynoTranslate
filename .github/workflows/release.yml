@@ -124,9 +124,14 @@ jobs:
           (cd src-tauri && cargo build --release) > runtime-build.txt 2>&1
           code=$?
           if [ "$code" != 0 ]; then
-            sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt | tail -n 30 | while IFS= read -r line; do
+            sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt > runtime-clean.txt
+            grep -E "error(\[|:)" runtime-clean.txt | head -n 25 > runtime-hits.txt
+            if [ ! -s runtime-hits.txt ]; then
+              tail -n 25 runtime-clean.txt > runtime-hits.txt
+            fi
+            while IFS= read -r line; do
               printf '::error title=runtime-build::%s\n' "${line//'%'/'%25'}"
-            done
+            done < runtime-hits.txt
             exit "$code"
           fi
           set -e

@@ -9,15 +9,12 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ndarray::{Array2, Array3};
 use ort::session::Session;
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
 
-const ENCODER_URL: &str =
-    "https://huggingface.co/Xenova/opus-mt-en-ru/resolve/main/onnx/encoder_model_quantized.onnx";
-const DECODER_URL: &str =
-    "https://huggingface.co/Xenova/opus-mt-en-ru/resolve/main/onnx/decoder_model_quantized.onnx";
+const ENCODER_URL: &str = "https://huggingface.co/Xenova/opus-mt-en-ru/resolve/main/onnx/encoder_model_quantized.onnx";
+const DECODER_URL: &str = "https://huggingface.co/Xenova/opus-mt-en-ru/resolve/main/onnx/decoder_model_quantized.onnx";
 const TOKENIZER_URL: &str = "https://huggingface.co/Xenova/opus-mt-en-ru/resolve/main/tokenizer.json";
 
 const DECODER_START: i64 = 62517;
@@ -73,11 +70,10 @@ impl Translator {
         if *ids.last().unwrap_or(&EOS) != EOS {
             ids.push(EOS);
         }
-        let length = ids.len();
-        let input_ids = Array2::from_shape_vec((1, length), ids).map_err(|error| error.to_string())?;
-        let mask = Array2::from_elem((1, length), 1i64);
-        let ids_tensor = Tensor::from_array(input_ids).map_err(|error| error.to_string())?;
-        let mask_tensor = Tensor::from_array(mask.clone()).map_err(|error| error.to_string())?;
+        let length = ids.len() as i64;
+        let mask = vec![1i64; length as usize];
+        let ids_tensor = tensor_i64(vec![1i64, length], ids)?;
+        let mask_tensor = tensor_i64(vec![1i64, length], mask.clone())?;
 
         let encoded = self
             .encoder
@@ -86,25 +82,18 @@ impl Translator {
                 "attention_mask" => mask_tensor,
             ])
             .map_err(|error| format!("encoder run: {error}"))?;
-        let hidden_view = output_f32(&encoded, "hidden")?;
-        let hidden_shape = hidden_view.shape().to_vec();
+        let (hidden_shape, hidden) = output_f32(&encoded, "hidden")?;
         if hidden_shape.len() != 3 {
             return Err(format!("encoder rank {}", hidden_shape.len()));
         }
-        let hidden = Array3::from_shape_vec(
-            (hidden_shape[0], hidden_shape[1], hidden_shape[2]),
-            hidden_view.iter().copied().collect(),
-        )
-        .map_err(|error| error.to_string())?;
         drop(encoded);
 
         let mut generated = vec![DECODER_START];
         for _ in 0..MAX_NEW_TOKENS {
-            let step = Array2::from_shape_vec((1, generated.len()), generated.clone())
-                .map_err(|error| error.to_string())?;
-            let step_tensor = Tensor::from_array(step).map_err(|error| error.to_string())?;
-            let hidden_tensor = Tensor::from_array(hidden.clone()).map_err(|error| error.to_string())?;
-            let mask_tensor = Tensor::from_array(mask.clone()).map_err(|error| error.to_string())?;
+            let step_len = generated.len() as i64;
+            let step_tensor = tensor_i64(vec![1, step_len], generated.clone())?;
+            let hidden_tensor = tensor_f32(hidden_shape.clone(), hidden.clone())?;
+            let mask_tensor = tensor_i64(vec![1, length], mask.clone())?;
             let decoded = self
                 .decoder
                 .run(ort::inputs![
@@ -113,13 +102,12 @@ impl Translator {
                     "encoder_attention_mask" => mask_tensor,
                 ])
                 .map_err(|error| format!("decoder run: {error}"))?;
-            let logits = output_f32(&decoded, "logits")?;
-            let shape = logits.shape();
-            if shape.len() != 3 || shape[2] == 0 {
+            let (shape, logits) = output_f32(&decoded, "logits")?;
+            if shape.len() != 3 || shape[2] == 0 || shape[1] == 0 {
                 return Err("decoder logits have an unexpected shape".to_owned());
             }
-            let vocab = shape[2];
-            let last = (shape[1] - 1) * vocab;
+            let vocab = shape[2] as usize;
+            let last = (shape[1] as usize - 1) * vocab;
             let mut best = 0usize;
             let mut best_score = f32::NEG_INFINITY;
             for (index, score) in logits.iter().skip(last).take(vocab).enumerate() {
@@ -158,21 +146,26 @@ fn input_names(session: &Session) -> String {
         .join(", ")
 }
 
-fn output_f32<'a>(
-    outputs: &'a ort::session::SessionOutputs<'_>,
-    needle: &str,
-) -> Result<ndarray::ArrayViewD<'a, f32>, String> {
+fn tensor_i64(shape: Vec<i64>, data: Vec<i64>) -> Result<Tensor<i64>, String> {
+    Tensor::from_array((shape, data)).map_err(|error| error.to_string())
+}
+
+fn tensor_f32(shape: Vec<i64>, data: Vec<f32>) -> Result<Tensor<f32>, String> {
+    Tensor::from_array((shape, data)).map_err(|error| error.to_string())
+}
+
+fn output_f32(outputs: &ort::session::SessionOutputs<'_>, needle: &str) -> Result<(Vec<i64>, Vec<f32>), String> {
     let names: Vec<String> = outputs.iter().map(|(name, _)| name.to_owned()).collect();
     let name = names
         .iter()
         .find(|name| name.contains(needle))
         .or_else(|| names.first())
         .ok_or_else(|| "model returned no outputs".to_owned())?;
-    outputs
-        .get(name.as_str())
-        .ok_or_else(|| format!("missing output {name}"))?
-        .try_extract_array::<f32>()
-        .map_err(|error| format!("{name}: {error}"))
+    let value = outputs.get(name.as_str()).ok_or_else(|| format!("missing output {name}"))?;
+    let (shape, data) = value
+        .try_extract_tensor::<f32>()
+        .map_err(|error| format!("{name}: {error}"))?;
+    Ok((shape.to_vec(), data.to_vec()))
 }
 
 fn model_dir(bundled: Option<&Path>) -> Result<PathBuf, String> {
