@@ -169,7 +169,7 @@ impl Reader {
         if spans.len() < 2 || spans.len() > 16 {
             return Ok((loosen(whole), confidence));
         }
-        let mut parts = Vec::new();
+        let mut parts: Vec<String> = Vec::new();
         let mut score = 0.0f32;
         let mut kept = 0u32;
         for (x, width) in spans {
@@ -761,7 +761,7 @@ fn word_spans(crop: &Frame) -> Vec<(u32, u32)> {
     if runs.is_empty() {
         return runs;
     }
-    let mut words = Vec::new();
+    let mut words: Vec<(u32, u32)> = Vec::new();
     let (mut start, mut span) = runs[0];
     for &(next, next_span) in &runs[1..] {
         let gap = next.saturating_sub(start + span);
