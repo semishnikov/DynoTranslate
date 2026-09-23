@@ -2,20 +2,15 @@
 setlocal
 cd /d "%~dp0\.."
 if not exist "src-tauri\resources" mkdir "src-tauri\resources"
-set "RUNTIME="
-for /f "delims=" %%F in ('dir /s /b "src-tauri\target\onnxruntime*.dll" 2^>nul') do (
-  if not defined RUNTIME set "RUNTIME=%%F"
+rem The translation runtime is linked into the program. Windows still needs
+rem DirectML.dll beside the installed program before it can start.
+if not exist "src-tauri\resources\DirectML.dll" (
+  if exist "%SystemRoot%\System32\DirectML.dll" (
+    copy /Y "%SystemRoot%\System32\DirectML.dll" "src-tauri\resources\DirectML.dll" >nul
+  )
 )
-if not defined RUNTIME (
-  echo the translation runtime dll was not produced
+if not exist "src-tauri\resources\DirectML.dll" (
+  echo the graphics library was not found
   exit /b 1
 )
-copy /Y "%RUNTIME%" "src-tauri\resources\onnxruntime.dll"
-if errorlevel 1 exit /b 1
-for /f "delims=" %%F in ('dir /s /b "src-tauri\target\DirectML.dll" 2^>nul') do (
-  copy /Y "%%F" "src-tauri\resources\DirectML.dll"
-  goto :copied
-)
-:copied
-dir /b "src-tauri\resources\*.dll"
 exit /b 0

@@ -106,9 +106,9 @@ jobs:
       # the failure reporter below. Tagged releases go through tauri-action instead: it
       # assembles the updater JSON and the draft release, and the owner rehearses that
       # path on a machine where the action logs are readable.
-      # The translation runtime is downloaded while the shell compiles. Copy it into the
-      # resource folder before bundling so the installer contains it even if the bundle
-      # hook is the only other chance to do so.
+      # The translation runtime is linked into the program, so there is no
+      # onnxruntime.dll to ship. DirectML.dll is still loaded when the program
+      # starts, and it has to be in the installer.
       - name: Build the translation runtime
         working-directory: app
         run: |
@@ -125,7 +125,7 @@ jobs:
           code=$?
           if [ "$code" != 0 ]; then
             sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt > runtime-clean.txt
-            grep -E "error(\[|:)" runtime-clean.txt | head -n 25 > runtime-hits.txt
+            grep -E "error(\[|:)|--> " runtime-clean.txt | head -n 30 > runtime-hits.txt
             if [ ! -s runtime-hits.txt ]; then
               tail -n 25 runtime-clean.txt > runtime-hits.txt
             fi
@@ -136,20 +136,36 @@ jobs:
           fi
           set -e
           mkdir -p src-tauri/resources
-          runtime=$(find src-tauri/target -name 'onnxruntime*.dll' -print | head -n 1)
-          if [ -z "$runtime" ]; then
-            echo "::error title=runtime-build::the translation runtime dll was not produced"
-            find src-tauri/target -name '*.dll' -print | head -n 20 | while IFS= read -r line; do
-              printf '::error title=runtime-dll::%s\n' "$line"
-            done
+          nupkg="$RUNNER_TEMP/directml.nupkg"
+          zip="$(cygpath -u "$RUNNER_TEMP")/directml.zip"
+          extract_unix="$(cygpath -u "$RUNNER_TEMP")/directml-pkg"
+          rm -rf "$extract_unix"
+          mkdir -p "$extract_unix"
+          if curl -fsSL -o "$nupkg" "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg"; then
+            cp -f "$nupkg" "$zip"
+            zip_win=$(cygpath -w "$zip")
+            extract_win=$(cygpath -w "$extract_unix")
+            if powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$zip_win' -DestinationPath '$extract_win' -Force"; then
+              found=$(find "$extract_unix" -iname 'DirectML.dll' | grep -i '/x64' | head -n 1 || true)
+              if [ -z "$found" ]; then
+                found=$(find "$extract_unix" -iname 'DirectML.dll' | head -n 1 || true)
+              fi
+              if [ -n "$found" ]; then
+                cp -f "$found" src-tauri/resources/DirectML.dll
+              fi
+            fi
+          fi
+          if [ ! -f src-tauri/resources/DirectML.dll ]; then
+            sys=$(cygpath -u "$SYSTEMROOT/System32/DirectML.dll")
+            if [ -f "$sys" ]; then
+              cp -f "$sys" src-tauri/resources/DirectML.dll
+            fi
+          fi
+          if [ ! -f src-tauri/resources/DirectML.dll ]; then
+            echo "::error title=runtime-build::DirectML.dll was not found for the installer"
             exit 1
           fi
-          cp -f "$runtime" src-tauri/resources/onnxruntime.dll
-          directml=$(find src-tauri/target -name 'DirectML.dll' -print | head -n 1 || true)
-          if [ -n "$directml" ]; then
-            cp -f "$directml" src-tauri/resources/DirectML.dll
-          fi
-          ls -l src-tauri/resources
+          ls -l src-tauri/resources/DirectML.dll
 
       - name: Build the installer
         if: github.ref_type != 'tag'
