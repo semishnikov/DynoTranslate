@@ -54,7 +54,7 @@ impl Translator {
             .map_err(|error| format!("decoder: {error}"))?;
         let _ = writeln!(log, "encoder inputs: {}", input_names(&encoder));
         let _ = writeln!(log, "decoder inputs: {}", input_names(&decoder));
-        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|error| error.to_string())?;
+        let tokenizer = load_tokenizer(&tokenizer_path)?;
         Ok(Self {
             encoder,
             decoder,
@@ -255,4 +255,71 @@ fn download(url: &str, path: &Path, progress: &mut dyn FnMut(u64)) -> Result<(),
 
 fn file_ok(path: &Path, minimum: u64) -> bool {
     fs::metadata(path).map(|meta| meta.len() >= minimum).unwrap_or(false)
+}
+
+/// The published OPUS dictionary marks its normaliser as present but leaves the table empty.
+/// The tokenizer library panics on that instead of skipping it. English text does not need the
+/// table, so the empty marker is removed before the dictionary is opened.
+fn load_tokenizer(path: &Path) -> Result<Tokenizer, String> {
+    let prepared = prepare_tokenizer(path)?;
+    let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        Tokenizer::from_file(&prepared)
+    }));
+    match loaded {
+        Ok(Ok(tokenizer)) => Ok(tokenizer),
+        Ok(Err(error)) => Err(format!("tokenizer: {error}")),
+        Err(error) => Err(format!("tokenizer: {}", panic_payload(error.as_ref()))),
+    }
+}
+
+fn prepare_tokenizer(path: &Path) -> Result<PathBuf, String> {
+    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let mut value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let Some(normalizer) = value.get_mut("normalizer") else {
+        return Ok(path.to_owned());
+    };
+    if !clear_empty_normalizer(normalizer) {
+        return Ok(path.to_owned());
+    }
+    let patched = path.with_extension("patched.json");
+    let rendered = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
+    fs::write(&patched, rendered).map_err(|error| error.to_string())?;
+    Ok(patched)
+}
+
+fn clear_empty_normalizer(value: &mut serde_json::Value) -> bool {
+    if is_empty_precompiled(value) {
+        *value = serde_json::Value::Null;
+        return true;
+    }
+    if value.get("type").and_then(|item| item.as_str()) != Some("Sequence") {
+        return false;
+    }
+    let Some(items) = value.get_mut("normalizers").and_then(|item| item.as_array_mut()) else {
+        return false;
+    };
+    let before = items.len();
+    items.retain(|item| !is_empty_precompiled(item));
+    items.len() != before
+}
+
+fn is_empty_precompiled(value: &serde_json::Value) -> bool {
+    if value.get("type").and_then(|item| item.as_str()) != Some("Precompiled") {
+        return false;
+    }
+    match value.get("precompiled_charsmap") {
+        Some(serde_json::Value::String(text)) if !text.is_empty() => false,
+        _ => true,
+    }
+}
+
+fn panic_payload(error: &(dyn std::any::Any + Send)) -> String {
+    if let Some(text) = error.downcast_ref::<&str>() {
+        return (*text).to_owned();
+    }
+    if let Some(text) = error.downcast_ref::<String>() {
+        return text.clone();
+    }
+    "словарь перевода не открылся".to_owned()
 }

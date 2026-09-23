@@ -184,29 +184,33 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             Ok(Ok(translator)) => break translator,
             Ok(Err(error)) => {
                 let _ = writeln!(log_file, "model: {error}");
-                publish(
-                    &control,
-                    &app,
-                    view(
-                        "error",
+                let downloading = error.contains("download") || error.contains("http");
+                let (title, detail) = if downloading {
+                    (
                         "Перевод не скачался",
                         "Нужен интернет. Список окон уже можно нажимать. Пробую ещё раз.",
-                    ),
-                );
+                    )
+                } else {
+                    (
+                        "Перевод не открылся",
+                        "Словарь перевода починю и открою снова. Список окон можно нажимать.",
+                    )
+                };
+                publish(&control, &app, view("error", title, detail));
                 wait(&control, &app, 8_000);
             }
             Err(error) => {
                 let text = panic_text(error.as_ref());
                 let _ = writeln!(log_file, "model panic: {text}");
-                let mut status = view(
-                    "error",
-                    "Перевод не запустился",
-                    "Список окон работает. Выберите нужное — попробую ещё раз.",
+                publish(
+                    &control,
+                    &app,
+                    view(
+                        "error",
+                        "Перевод не запустился",
+                        "Список окон работает. Пробую ещё раз, английский текст не пропал.",
+                    ),
                 );
-                if !text.is_empty() {
-                    status.detail = format!("{} {text}", status.detail);
-                }
-                publish(&control, &app, status);
                 wait(&control, &app, 4_000);
             }
         }
