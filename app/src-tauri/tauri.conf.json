@@ -42,7 +42,7 @@
       "resources/DirectML.dll": "DirectML.dll"
     },
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "webviewInstallMode": { "type": "fixedRuntime", "path": "webview2" },
       "wix": { "language": "en-US" },
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"
