@@ -98,7 +98,7 @@ fn loop_forever(bundled: Option<PathBuf>) {
             }
         };
         let (frame, bounds) = captured;
-        let fingerprint = fingerprint_of(hwnd, &frame);
+        let fingerprint = fingerprint_of(hwnd, &frame, bounds);
         if fingerprint == seen {
             std::thread::sleep(Duration::from_millis(180));
             continue;

@@ -161,7 +161,9 @@ fn output_f32(outputs: &ort::session::SessionOutputs<'_>, needle: &str) -> Resul
         .find(|name| name.contains(needle))
         .or_else(|| names.first())
         .ok_or_else(|| "model returned no outputs".to_owned())?;
-    let value = outputs.get(name.as_str()).ok_or_else(|| format!("missing output {name}"))?;
+    let value = outputs
+        .get(name.as_str())
+        .ok_or_else(|| format!("missing output {name}"))?;
     let (shape, data) = value
         .try_extract_tensor::<f32>()
         .map_err(|error| format!("{name}: {error}"))?;
