@@ -271,6 +271,18 @@ remainder visible in the same journal: the detector occasionally merges two side
 bubbles into one full-width box, and the plate then honestly covers that box; splitting such
 boxes is the next lever if the owner still sees it.
 
+M7 (`135f057`), after the owner redirected the project from per-fix rebuilds to owner-tunable
+gears and coherent translation: `settings.rs` adds live gears (overlay style, translation
+backend, confidence, font scale, lines per tick, opacity, LLM context length, API keys) that
+the loop reads every tick and that persist to `settings.json`; the Settings screen gains a
+Live translation card. `backends.rs` adds Google (no key), DeepL (key) and OpenAI (key; the
+whole tick of lines plus recent EN->RU pairs in one request, for coherence); the bundled local
+model fills every gap a network backend leaves. The default overlay style is now Seamless —
+the compositor erases the original and draws the translation in its place. Verified on
+`135f057`: CI run 35911694776 green on all four jobs, Release run 35911694744 uploads
+`installer-windows` (28,994,678 bytes). The on-screen result is not verified here: no display,
+no Windows — the owner turns the gears and reports back.
+
 ## Next
 
 1. **Owner tries the new installer** from Release run 35890197995 on the same Rick & Morty
