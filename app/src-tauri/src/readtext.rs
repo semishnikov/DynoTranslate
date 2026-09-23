@@ -236,7 +236,7 @@ impl Reader {
 fn open_session(path: &Path) -> Result<Session, String> {
     Session::builder()
         .map_err(|error| error.to_string())?
-        .with_intra_threads(2)
+        .with_intra_threads(crate::model::ort_threads())
         .map_err(|error| error.to_string())?
         .commit_from_file(path)
         .map_err(|error| error.to_string())

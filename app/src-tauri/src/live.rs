@@ -23,7 +23,12 @@ use crate::model::Translator;
 use crate::readtext::Reader;
 
 const MAX_OCR_WIDTH: u32 = 1280;
-const NEW_LINES_PER_TICK: usize = 8;
+/// Translations stream in a few per tick instead of one long blocking batch, so the first
+/// plates land about a second after the screen changes and the loop stays responsive.
+const NEW_LINES_PER_TICK: usize = 3;
+/// Stylised lettering reads as garbage well below this confidence; translating it only paints
+/// transliterated noise over the art, so low-confidence reads stay untranslated.
+const MIN_READ_CONFIDENCE: f32 = 0.72;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -393,8 +398,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             let mut saw_other = false;
             let mut saw_cyrillic = false;
             let mut saw_latin = false;
-            for line in lines {
-                let source = line.text.trim();
+            // Lines of one bubble become one block: the translator sees whole sentences, the
+            // overlay draws one plate, and the page pays for one translation per bubble.
+            let mut bubbles = group_bubbles(&lines);
+            bubbles
+                .sort_by_key(|bubble| std::cmp::Reverse(u64::from(bubble.rect.width) * u64::from(bubble.rect.height)));
+            for bubble in bubbles {
+                let source = bubble.text.trim();
                 if source.chars().all(|ch| !ch.is_alphabetic()) {
                     continue;
                 }
@@ -410,6 +420,10 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     // never translate or cover something that is not really text.
                     continue;
                 }
+                if bubble.confidence < MIN_READ_CONFIDENCE {
+                    saw_latin = true;
+                    continue;
+                }
                 match script_of(source) {
                     Script::Other => {
                         saw_other = true;
@@ -423,23 +437,32 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     Script::Latin => saw_latin = true,
                 }
                 let key = clip(source, 180);
-                let translated = if let Some(cached) = cache.get(&key) {
-                    cached.clone()
-                } else if fresh >= NEW_LINES_PER_TICK {
-                    pending = true;
-                    continue;
-                } else {
-                    fresh += 1;
-                    match translate_fully(&mut translator, &key) {
-                        Ok(text) if has_cyrillic(&text) => {
-                            cache.insert(key.clone(), text.clone());
-                            control.inner.translated.fetch_add(1, Ordering::SeqCst);
-                            text
-                        }
-                        Ok(_) => continue,
-                        Err(error) => {
-                            log_once(&mut log_file, &mut last_log, &format!("translate: {error}"));
-                            continue;
+                let translated = match cache.get(&key) {
+                    // An empty entry is a remembered rejection: a misread we will never cover.
+                    Some(cached) if cached.is_empty() => continue,
+                    Some(cached) => cached.clone(),
+                    None if fresh >= NEW_LINES_PER_TICK => {
+                        pending = true;
+                        continue;
+                    }
+                    None => {
+                        fresh += 1;
+                        match translate_fully(&mut translator, &key) {
+                            Ok(text) if has_cyrillic(&text) && plausible_russian(&text) => {
+                                cache.insert(key.clone(), text.clone());
+                                control.inner.translated.fetch_add(1, Ordering::SeqCst);
+                                text
+                            }
+                            Ok(_) => {
+                                // Garbage in, garbage out — remember the verdict so a stuck
+                                // misread never burns the per-tick translation budget again.
+                                cache.insert(key.clone(), String::new());
+                                continue;
+                            }
+                            Err(error) => {
+                                log_once(&mut log_file, &mut last_log, &format!("translate: {error}"));
+                                continue;
+                            }
                         }
                     }
                 };
@@ -451,17 +474,19 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     sample_score = score;
                     sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
                 }
-                let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
+                let rect = scale_rect(bubble.rect, scale, frame.width(), frame.height());
+                let rect = pad(rect, 2, frame.bounds());
                 let rect = widen(rect, frame.bounds());
                 if rect.height < 8 || rect.width < 8 {
                     continue;
                 }
-                let size = (rect.height as f32 * 0.72).clamp(12.0, 42.0) as u32;
+                let size = (bubble.line_height as f32 * scale * 0.72).clamp(12.0, 42.0) as u32;
+                let (background, foreground) = plate_colors(&frame, &rect);
                 blocks.push(
                     OverlayBlock::new(rect, translated)
                         .with_font(size, FontWeight::Regular, false)
-                        .with_colors([16, 16, 16, 230], [244, 244, 244, 255])
-                        .with_confidence(line.confidence),
+                        .with_colors(background, foreground)
+                        .with_confidence(bubble.confidence),
                 );
             }
 
@@ -534,7 +559,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 last_sig = sig.clone();
                 last_hwnd = hwnd;
             }
-            std::thread::sleep(Duration::from_millis(if pending { 40 } else { 160 }));
+            std::thread::sleep(Duration::from_millis(if pending { 30 } else { 160 }));
         }
     }
 }
@@ -958,6 +983,155 @@ fn picture_same(left: &[u8], right: &[u8]) -> bool {
     changed < 3
 }
 
+/// One visual block of text: a speech bubble or paragraph the line reader split into rows.
+struct Bubble {
+    rect: Rect,
+    text: String,
+    confidence: f32,
+    /// Height of one source line; the translation is typeset at this size, not the bubble's.
+    line_height: u32,
+}
+
+/// Rows that stack in one column with a small gap belong to the same bubble, so the translator
+/// gets whole sentences and the overlay draws one plate per bubble instead of one per row.
+fn group_bubbles(lines: &[lumen_ocr::Recognition]) -> Vec<Bubble> {
+    let mut order: Vec<&lumen_ocr::Recognition> = lines.iter().collect();
+    order.sort_by_key(|line| line.bounds.y);
+    let mut bubbles: Vec<Bubble> = Vec::new();
+    for line in order {
+        let bounds = line.bounds;
+        let joined = bubbles.iter_mut().rev().find(|bubble| same_block(bubble.rect, bounds));
+        if let Some(bubble) = joined {
+            bubble.rect = bubble.rect.union(&bounds);
+            bubble.text.push(' ');
+            bubble.text.push_str(line.text.trim());
+            bubble.confidence = bubble.confidence.min(line.confidence);
+            bubble.line_height = bubble.line_height.max(bounds.height);
+        } else {
+            bubbles.push(Bubble {
+                rect: bounds,
+                text: line.text.trim().to_owned(),
+                confidence: line.confidence,
+                line_height: bounds.height.max(1),
+            });
+        }
+    }
+    bubbles
+}
+
+fn same_block(upper: Rect, lower: Rect) -> bool {
+    let gap = (lower.y - upper.bottom()).max(0);
+    if gap * 5 > upper.height.max(1) as i32 * 4 {
+        return false;
+    }
+    let overlap = upper.right().min(lower.right()) - upper.x.max(lower.x);
+    overlap * 2 > upper.width.min(lower.width) as i32
+}
+
+/// Grows the box a little so the plate fully covers the source glyphs, which detection boxes
+/// hug tightly.
+fn pad(rect: Rect, pixels: i32, bounds: Rect) -> Rect {
+    let grown = Rect::new(
+        rect.x - pixels,
+        rect.y - pixels,
+        rect.width + pixels as u32 * 2,
+        rect.height + pixels as u32 * 2,
+    );
+    grown.clamp_to(&bounds).unwrap_or(rect)
+}
+
+fn lum(pixel: [u8; 4]) -> u8 {
+    ((u16::from(pixel[2]) * 77 + u16::from(pixel[1]) * 150 + u16::from(pixel[0]) * 29) / 256) as u8
+}
+
+/// The plate takes the colour the text actually sits on: a white bubble gets a white plate with
+/// dark ink, a dark game HUD stays dark with light ink — never a black bar across the art.
+fn plate_colors(frame: &Frame, rect: &Rect) -> ([u8; 4], [u8; 4]) {
+    let mut buckets = [0u32; 64];
+    let mut sums = [[0u32; 3]; 64];
+    let mut counted = 0u32;
+    let mut sample = |x: i32, y: i32| {
+        if x < 0 || y < 0 || x >= frame.width() as i32 || y >= frame.height() as i32 {
+            return;
+        }
+        let pixel = frame.pixel(x as u32, y as u32);
+        let bucket = (lum(pixel) / 4) as usize;
+        buckets[bucket] += 1;
+        sums[bucket][0] += u32::from(pixel[0]);
+        sums[bucket][1] += u32::from(pixel[1]);
+        sums[bucket][2] += u32::from(pixel[2]);
+        counted += 1;
+    };
+    let left = rect.x.saturating_sub(6);
+    let right = rect.right() + 6;
+    for y in rect.y.saturating_sub(6)..rect.y.saturating_sub(2) {
+        for x in (left..right).step_by(2) {
+            sample(x, y);
+        }
+    }
+    for y in rect.bottom() + 2..rect.bottom() + 6 {
+        for x in (left..right).step_by(2) {
+            sample(x, y);
+        }
+    }
+    for x in rect.x.saturating_sub(6)..rect.x.saturating_sub(2) {
+        for y in (rect.y..rect.bottom()).step_by(2) {
+            sample(x, y);
+        }
+    }
+    for x in rect.right() + 2..rect.right() + 6 {
+        for y in (rect.y..rect.bottom()).step_by(2) {
+            sample(x, y);
+        }
+    }
+    if counted == 0 {
+        return ([16, 16, 16, 255], [244, 244, 244, 255]);
+    }
+    let best = (0..64).max_by_key(|bucket| buckets[bucket]).unwrap_or(0);
+    let n = buckets[best].max(1);
+    let background = [
+        (sums[best][0] / n) as u8,
+        (sums[best][1] / n) as u8,
+        (sums[best][2] / n) as u8,
+        255u8,
+    ];
+    let foreground = if lum(background) > 128 {
+        [26, 26, 26, 255]
+    } else {
+        [246, 246, 246, 255]
+    };
+    (background, foreground)
+}
+
+/// Transliterated garbage ("МЭДОЛЕКЕНТОЕМО") is heavy in letters real Russian almost never
+/// uses and has no lowercase words; a translation that is mostly rare letters, or a long
+/// all-caps run, came from a misread, not a sentence.
+fn plausible_russian(text: &str) -> bool {
+    let mut total = 0u32;
+    let mut rare = 0u32;
+    let mut lower = 0u32;
+    for ch in text.chars() {
+        if !('\u{0400}'..='\u{04FF}').contains(&ch) {
+            continue;
+        }
+        total += 1;
+        if ch.is_lowercase() {
+            lower += 1;
+        }
+        if "эщъжфхцЭЩЪЖФХЦ".contains(ch) {
+            rare += 1;
+        }
+    }
+    if total == 0 {
+        return true;
+    }
+    if rare * 12 > total {
+        return false;
+    }
+    // Long all-caps strings: stylised lettering transliterates into shouting gibberish.
+    !(total >= 12 && lower == 0)
+}
+
 /// A translation is usually a little longer than the original. Give the fitter a quarter more
 /// room so it wraps one size down instead of stacking lines, but never stretch a short label
 /// into a window-wide bar: the plate hugs the typeset text either way.
@@ -1061,6 +1235,66 @@ mod tests {
     fn a_decimal_is_not_a_sentence_break() {
         let parts = sentence_pieces("Damage 1.5");
         assert_eq!(parts, vec!["Damage 1.5"]);
+    }
+
+    #[test]
+    fn bubble_lines_merge_and_separate_bubbles_do_not() {
+        use super::group_bubbles;
+        use lumen_core::Rect;
+        use lumen_ocr::Recognition;
+        let rows = |pairs: &[(&str, i32, i32, u32)]| -> Vec<Recognition> {
+            pairs
+                .iter()
+                .map(|(text, x, y, width)| Recognition {
+                    text: (*text).to_owned(),
+                    bounds: Rect::new(x, y, width, 14),
+                    confidence: 0.95,
+                })
+                .collect()
+        };
+        // One bubble: two rows, same column, two pixels apart.
+        let merged = group_bubbles(&rows(&[("Hold on", 40, 10, 120), ("Rick.", 52, 26, 60)]));
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].text, "Hold on Rick.");
+        assert_eq!(merged[0].rect, Rect::new(40, 10, 120, 30));
+        // Two bubbles: far apart, and side by side in different columns.
+        let apart = group_bubbles(&rows(&[
+            ("Hold on", 40, 10, 120),
+            ("Rick.", 52, 200, 60),
+            ("Right?", 400, 10, 80),
+        ]));
+        assert_eq!(apart.len(), 3);
+    }
+
+    #[test]
+    fn transliterated_garbage_is_not_plausible_russian() {
+        use super::plausible_russian;
+        assert!(plausible_russian("Я не знаю, что делать."));
+        assert!(plausible_russian("Когда жизнь даёт тебе лимоны, пей текилу."));
+        assert!(!plausible_russian("МЭДОЛЕКЕНТОЕМОНЕГ"));
+        assert!(!plausible_russian("ВЕХИТАТХИКТАЛОФЕ"));
+        assert!(!plausible_russian("Вткоэдэг"));
+    }
+
+    #[test]
+    fn plates_take_the_background_and_readable_ink() {
+        use super::{lum, plate_colors};
+        use lumen_core::{Frame, Rect};
+        // White page with dark text: light plate, dark ink.
+        let mut frame = Frame::filled(80, 60, [255, 255, 255, 255]).unwrap();
+        for x in 20..60 {
+            for y in 28..36 {
+                frame.set_pixel(x, y, [10, 10, 10, 255]);
+            }
+        }
+        let (background, foreground) = plate_colors(&frame, &Rect::new(22, 26, 36, 12));
+        assert!(lum(background) > 128, "white page should get a light plate");
+        assert!(lum(foreground) < 128);
+        // Dark background: dark plate, light ink.
+        let dark = Frame::filled(80, 60, [24, 24, 24, 255]).unwrap();
+        let (background, foreground) = plate_colors(&dark, &Rect::new(22, 26, 36, 12));
+        assert!(lum(background) < 128, "dark art should get a dark plate");
+        assert!(lum(foreground) > 128);
     }
 }
 

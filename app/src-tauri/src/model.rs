@@ -21,6 +21,15 @@ const DECODER_START: i64 = 62517;
 const EOS: i64 = 0;
 const MAX_NEW_TOKENS: usize = 96;
 
+/// ONNX sessions get as many cores as the machine can spare (2..=4): translation is the hot
+/// path, and two threads left half a laptop idle while the user waited on it.
+pub(crate) fn ort_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|cores| cores.get())
+        .unwrap_or(2)
+        .clamp(2, 4)
+}
+
 pub struct Translator {
     encoder: Session,
     decoder: Session,
@@ -38,13 +47,13 @@ impl Translator {
         let _ = writeln!(log, "loading sessions");
         let encoder = Session::builder()
             .map_err(|error| error.to_string())?
-            .with_intra_threads(2)
+            .with_intra_threads(ort_threads())
             .map_err(|error| error.to_string())?
             .commit_from_file(&encoder_path)
             .map_err(|error| format!("encoder: {error}"))?;
         let decoder = Session::builder()
             .map_err(|error| error.to_string())?
-            .with_intra_threads(2)
+            .with_intra_threads(ort_threads())
             .map_err(|error| error.to_string())?
             .commit_from_file(&decoder_path)
             .map_err(|error| format!("decoder: {error}"))?;
