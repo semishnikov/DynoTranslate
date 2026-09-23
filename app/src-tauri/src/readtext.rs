@@ -630,10 +630,7 @@ fn letter_count(lines: &[Recognition]) -> usize {
 }
 
 fn data_dir() -> Result<PathBuf, String> {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("DynoTranslate").join("ocr");
+    let dir = crate::settings::data_dir().join("ocr");
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     Ok(dir)
 }

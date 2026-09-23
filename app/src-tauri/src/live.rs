@@ -175,6 +175,21 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
     }
 
     let mut log_file = open_log();
+    let boot = settings.read().expect("live settings").clone();
+    let _ = writeln!(
+        log_file,
+        "{} session start version={} dir={:?} log={:?}",
+        stamp(),
+        env!("CARGO_PKG_VERSION"),
+        crate::settings::data_dir(),
+        log_file_path()
+    );
+    let _ = writeln!(
+        log_file,
+        "{} settings {}",
+        stamp(),
+        serde_json::to_string(&boot).unwrap_or_default()
+    );
     let mut translator = loop {
         let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut report = |note: &str| {
@@ -280,6 +295,8 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
     let mut cache: HashMap<String, String> = HashMap::new();
     // Recent source/translation pairs; the LLM backends read it for coherence.
     let mut context: VecDeque<(String, String)> = VecDeque::new();
+    let mut last_settings_json = String::new();
+    let mut frame_counter: u32 = 0;
     let mut last_sig: Vec<u8> = Vec::new();
     let mut last_hwnd = 0isize;
     let mut quiet_until = Instant::now();
@@ -393,6 +410,11 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
             };
 
             let settings = settings.read().expect("live settings").clone();
+            let settings_json = serde_json::to_string(&settings).unwrap_or_default();
+            if settings_json != last_settings_json {
+                let _ = writeln!(log_file, "{} settings {}", stamp(), settings_json);
+                last_settings_json = settings_json;
+            }
             let mut pending = false;
             let mut blocks = Vec::new();
             let mut sample = String::new();
@@ -435,6 +457,14 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                         b.width,
                         b.height,
                         line.text
+                    );
+                }
+                if let Some(path) = save_frame(&small, &mut frame_counter) {
+                    let _ = writeln!(
+                        log_file,
+                        "{} frame saved {:?} (exactly what OCR saw; attach it instead of a screenshot)",
+                        stamp(),
+                        path
                     );
                 }
             }
@@ -938,7 +968,34 @@ fn preview_data_url(frame: &Frame) -> String {
     if frame.width() == 0 || frame.height() == 0 {
         return String::new();
     }
-    let (width, height, scale) = preview_size(frame.width(), frame.height());
+    format!("data:image/bmp;base64,{}", base64(&bmp_bytes(frame, 280, 160)))
+}
+
+/// A BMP snapshot of the OCR input, kept inside the app folder and pruned to the newest few,
+/// so a bug report is the journal plus these files — no screenshots required.
+fn save_frame(frame: &Frame, counter: &mut u32) -> Option<PathBuf> {
+    if frame.width() == 0 || frame.height() == 0 {
+        return None;
+    }
+    let dir = crate::settings::frames_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    *counter = counter.wrapping_add(1);
+    let path = dir.join(format!("{:06}.bmp", counter));
+    std::fs::write(&path, bmp_bytes(frame, 960, 720)).ok()?;
+    let mut names: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|name| name.extension().is_some_and(|ext| ext == "bmp"))
+        .collect();
+    names.sort();
+    for stale in names.iter().rev().skip(8) {
+        let _ = std::fs::remove_file(stale);
+    }
+    Some(path)
+}
+
+fn bmp_bytes(frame: &Frame, max_width: u32, max_height: u32) -> Vec<u8> {
+    let (width, height, scale) = preview_size(frame.width(), frame.height(), max_width, max_height);
     let row_stride = (width * 3).div_ceil(4) * 4;
     let pixel_bytes = row_stride * height;
     let file_size = 54u32 + pixel_bytes;
@@ -965,20 +1022,20 @@ fn preview_data_url(frame: &Frame) -> String {
             bmp[offset + 2] = pixel[2];
         }
     }
-    format!("data:image/bmp;base64,{}", base64(&bmp))
+    bmp
 }
 
-fn preview_size(width: u32, height: u32) -> (u32, u32, f32) {
+fn preview_size(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u32, f32) {
     let mut scale = 1.0f32;
-    if width > 280 {
-        scale = width as f32 / 280.0;
+    if width > max_width {
+        scale = width as f32 / max_width as f32;
     }
     let mut out_w = ((width as f32 / scale).round() as u32).max(1);
     let mut out_h = ((height as f32 / scale).round() as u32).max(1);
-    if out_h > 160 {
-        scale *= out_h as f32 / 160.0;
+    if out_h > max_height {
+        scale *= out_h as f32 / max_height as f32;
         out_w = ((width as f32 / scale).round() as u32).max(1);
-        out_h = 160;
+        out_h = max_height;
     }
     (out_w, out_h, scale)
 }
@@ -1570,10 +1627,7 @@ fn panic_text(error: &(dyn std::any::Any + Send)) -> String {
 }
 
 fn data_dir() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("DynoTranslate")
+    crate::settings::data_dir()
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -1623,31 +1677,34 @@ fn log_file_path() -> PathBuf {
 }
 
 fn open_log() -> std::fs::File {
+    // A fresh journal per launch: the owner reads one run at a time, and yesterday's run has
+    // no bearing on today's bug. Re-opens inside the same run (after a loop panic) append, so
+    // the panic trail is not lost.
+    static FRESH: AtomicBool = AtomicBool::new(false);
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
     let path = log_file_path();
-    // Keep the journal bounded: a previous run's tail is better than a 400 MB append-only file.
+    // Keep the journal bounded inside the app folder.
     if std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0) > 4 * 1024 * 1024 {
         let rotated = dir.join("live.log.prev");
         let _ = std::fs::remove_file(&rotated);
         let _ = std::fs::rename(&path, rotated);
     }
-    OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .unwrap_or_else(|_| fallback_log())
+    let fresh = !FRESH.swap(true, Ordering::SeqCst);
+    let mut options = OpenOptions::new();
+    options.create(true);
+    if fresh {
+        options.write(true).truncate(true);
+    } else {
+        options.append(true);
+    }
+    options.open(path).unwrap_or_else(|_| fallback_log())
 }
 
+/// The app never writes outside its own folder: if even that is unavailable, the journal goes
+/// to the null device instead of some stray temp file.
 fn fallback_log() -> std::fs::File {
-    let path = std::env::temp_dir().join("dynotranslate-live.log");
-    if let Ok(file) = std::fs::File::create(&path) {
-        return file;
-    }
-    OpenOptions::new()
-        .write(true)
-        .open("NUL")
-        .unwrap_or_else(|_| std::fs::File::create(path).unwrap_or_else(|_| std::fs::File::open("NUL").expect("log")))
+    OpenOptions::new().write(true).open("NUL").expect("log")
 }
 
 fn log(message: &str) -> std::io::Result<()> {

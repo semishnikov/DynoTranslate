@@ -52,11 +52,21 @@ impl Default for LiveSettings {
 
 pub type LiveSettingsHandle = Arc<RwLock<LiveSettings>>;
 
-pub fn path() -> PathBuf {
-    let root = std::env::var("LOCALAPPDATA")
+/// Everything the app writes lives under this one directory and nowhere else: the journal,
+/// settings, models, diagnostic frames and the webview profile.
+pub fn data_dir() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir());
-    root.join("DynoTranslate").join("settings.json")
+        .unwrap_or_else(std::env::temp_dir)
+        .join("DynoTranslate")
+}
+
+pub fn frames_dir() -> PathBuf {
+    data_dir().join("frames")
+}
+
+pub fn path() -> PathBuf {
+    data_dir().join("settings.json")
 }
 
 /// Loads the owner's saved gears, or the recommended defaults on a first run.

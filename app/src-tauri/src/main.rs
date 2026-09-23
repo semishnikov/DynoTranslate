@@ -98,6 +98,11 @@ fn choose_window(id: String, state: tauri::State<'_, live::Control>, app: tauri:
 }
 
 fn main() {
+    // WebView2 would otherwise keep its profile in its own per-bundle folder; the owner wants
+    // every byte the app writes inside the one DynoTranslate directory.
+    let webview_dir = settings::data_dir().join("webview");
+    let _ = std::fs::create_dir_all(&webview_dir);
+    std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_dir);
     // The repository is private, so the updater authenticates its release downloads with
     // a read-only token baked in at build time (release.yml sets UPDATER_PAT from a
     // secret). Builds without one — pull requests from forks, local checks — simply ship
