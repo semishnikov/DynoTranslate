@@ -152,7 +152,10 @@ impl Renderer {
                     0.0
                 };
                 for glyph in run.glyphs.iter() {
-                    let physical = glyph.physical((column_x, origin_y as f32 + run.line_y), 1.0);
+                    // The origin is added once, when the stamps are inked below; baking it into
+                    // the physical position here pushed every glyph `origin_y` pixels too low,
+                    // so translations landed outside their blocks.
+                    let physical = glyph.physical((column_x, run.line_y), 1.0);
                     if let Some(halo) = outline {
                         for (dx, dy) in OUTLINE_OFFSETS {
                             stamps.push((shift(&physical, dx, dy), halo, origin_x, origin_y));
