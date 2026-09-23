@@ -258,8 +258,18 @@ English PP-OCRv3 recognition and per-line translation at eight lines per tick. R
 the last verified build: bubble grouping, the confidence gate, the word-shape gate and the
 target-plausibility gate — together they shrank coverage to a few percent and merged whole
 columns into one full-width plate. Kept: the stage journal with its path in the UI, sampled
-plate colours, 2 px padding, four ONNX threads, 30 ms streaming recompose. The on-screen
+plate colours, four ONNX threads, 30 ms streaming recompose. The on-screen
 result is not verified here: no display, no Windows.
+
+Follow-up on `56ce121`, after the owner's screenshots showed plates wider than the bubbles
+and overlapping each other: the plate is now exactly the scaled detection box (the `widen`
+and `pad` helpers are deleted), and reads under 0.75 confidence are skipped and journaled —
+the owner's own log showed every garbage plate at 0.73 or below and every good translation
+at 0.84 and up. Verified on `56ce121`: CI run 35906051772 green on all four jobs, Release run
+35906051805 uploads `installer-windows` (28,925,111 bytes), green on the first push. Known
+remainder visible in the same journal: the detector occasionally merges two side-by-side
+bubbles into one full-width box, and the plate then honestly covers that box; splitting such
+boxes is the next lever if the owner still sees it.
 
 ## Next
 
