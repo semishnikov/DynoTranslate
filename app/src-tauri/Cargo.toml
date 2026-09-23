@@ -25,7 +25,7 @@ lumen-core = { path = "../../crates/core" }
 lumen-ocr = { path = "../../crates/ocr" }
 lumen-overlay = { path = "../../crates/overlay" }
 lumen-render = { path = "../../crates/render" }
-ort = { version = "=2.0.0-rc.13", features = ["load-dynamic", "preload-dylibs"] }
+ort = "=2.0.0-rc.13"
 tokenizers = { version = "0.21", default-features = false, features = ["fancy-regex"] }
 ureq = "2"
 

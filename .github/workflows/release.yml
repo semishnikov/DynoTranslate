@@ -136,16 +136,18 @@ jobs:
           fi
           set -e
           mkdir -p src-tauri/resources
-          if [ ! -f src-tauri/target/release/onnxruntime.dll ]; then
-            echo "::error title=runtime-build::onnxruntime.dll was not next to the built program"
-            find src-tauri/target/release -maxdepth 1 -name '*.dll' -print | while IFS= read -r line; do
+          runtime=$(find src-tauri/target -name 'onnxruntime*.dll' -print | head -n 1)
+          if [ -z "$runtime" ]; then
+            echo "::error title=runtime-build::the translation runtime dll was not produced"
+            find src-tauri/target -name '*.dll' -print | head -n 20 | while IFS= read -r line; do
               printf '::error title=runtime-dll::%s\n' "$line"
             done
             exit 1
           fi
-          cp -f src-tauri/target/release/onnxruntime.dll src-tauri/resources/onnxruntime.dll
-          if [ -f src-tauri/target/release/DirectML.dll ]; then
-            cp -f src-tauri/target/release/DirectML.dll src-tauri/resources/DirectML.dll
+          cp -f "$runtime" src-tauri/resources/onnxruntime.dll
+          directml=$(find src-tauri/target -name 'DirectML.dll' -print | head -n 1 || true)
+          if [ -n "$directml" ]; then
+            cp -f "$directml" src-tauri/resources/DirectML.dll
           fi
           ls -l src-tauri/resources
 
