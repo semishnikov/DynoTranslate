@@ -1245,8 +1245,8 @@ mod tests {
         let rows = |pairs: &[(&str, i32, i32, u32)]| -> Vec<Recognition> {
             pairs
                 .iter()
-                .map(|(text, x, y, width)| Recognition {
-                    text: (*text).to_owned(),
+                .map(|&(text, x, y, width)| Recognition {
+                    text: text.to_owned(),
                     bounds: Rect::new(x, y, width, 14),
                     confidence: 0.95,
                 })
