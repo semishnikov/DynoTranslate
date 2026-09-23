@@ -19,7 +19,7 @@ const TOKENIZER_URL: &str = "https://huggingface.co/Xenova/opus-mt-en-ru/resolve
 
 const DECODER_START: i64 = 62517;
 const EOS: i64 = 0;
-const MAX_NEW_TOKENS: usize = 48;
+const MAX_NEW_TOKENS: usize = 96;
 
 pub struct Translator {
     encoder: Session,

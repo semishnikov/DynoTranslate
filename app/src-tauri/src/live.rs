@@ -23,7 +23,7 @@ use crate::model::Translator;
 use crate::readtext::Reader;
 
 const MAX_OCR_WIDTH: u32 = 1280;
-const NEW_LINES_PER_TICK: usize = 4;
+const NEW_LINES_PER_TICK: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -277,7 +277,10 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
     };
     let mut overlay: Option<LayeredOverlay> = None;
     let mut cache: HashMap<String, String> = HashMap::new();
-    let mut seen = 0u64;
+    let mut last_sig: Vec<u8> = Vec::new();
+    let mut last_hwnd = 0isize;
+    let mut quiet_until = Instant::now();
+    let mut held = String::new();
     let mut last_preview = Instant::now() - Duration::from_secs(2);
     let mut last_log = String::new();
 
@@ -337,25 +340,43 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     last_preview = Instant::now();
                 }
 
-                let fingerprint = fingerprint_of(hwnd, &frame, bounds);
-                if fingerprint == seen {
-                    let phase = control.status().phase;
-                    if phase == "translating" || phase == "watching" {
-                        std::thread::sleep(Duration::from_millis(180));
-                        continue;
+                let sig = picture_sig(&frame);
+                if hwnd != last_hwnd {
+                    held.clear();
+                    last_sig.clear();
+                }
+                let stable = hwnd == last_hwnd && picture_same(&last_sig, &sig);
+                if stable && Instant::now() < quiet_until {
+                    std::thread::sleep(Duration::from_millis(180));
+                    continue;
+                }
+                if stable {
+                    if let Some(surface) = overlay.as_mut() {
+                        if surface.size() == (bounds.width, bounds.height) {
+                            let _ = surface.move_to(bounds);
+                            std::thread::sleep(Duration::from_millis(180));
+                            continue;
+                        }
                     }
                 }
 
-                let mut looking = view("watching", "Читаю", "Своё распознавание, Windows для этого не нужна.");
-                looking.watched = name.clone();
-                looking.capture = method.to_owned();
-                publish(&control, &app, looking);
+                if held.is_empty() {
+                    let mut looking = view("watching", "Читаю", "Своё распознавание, Windows для этого не нужна.");
+                    looking.watched = name.clone();
+                    looking.capture = method.to_owned();
+                    publish(&control, &app, looking);
+                }
 
                 let (small, scale) = downscale(&frame);
                 let lines = match reader.read(&small) {
                     Ok(lines) => lines,
                     Err(error) => {
                         log_once(&mut log_file, &mut last_log, &format!("ocr: {error}"));
+                        if !held.is_empty() {
+                            quiet_until = Instant::now() + Duration::from_millis(800);
+                            std::thread::sleep(Duration::from_millis(200));
+                            continue;
+                        }
                         clear(&mut overlay);
                         let mut status = view(
                             "error",
@@ -371,8 +392,10 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 };
 
                 let mut fresh = 0usize;
+                let mut pending = false;
                 let mut blocks = Vec::new();
                 let mut sample = String::new();
+                let mut sample_score = 0usize;
                 let mut saw_other = false;
                 let mut saw_cyrillic = false;
                 let mut saw_latin = false;
@@ -393,14 +416,15 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                         Script::None => continue,
                         Script::Latin => saw_latin = true,
                     }
-                    let key = clip(source, 160);
+                    let key = clip(source, 180);
                     let translated = if let Some(cached) = cache.get(&key) {
                         cached.clone()
                     } else if fresh >= NEW_LINES_PER_TICK {
+                        pending = true;
                         continue;
                     } else {
                         fresh += 1;
-                        match translator.translate(&key) {
+                        match translate_fully(&mut translator, &key) {
                             Ok(text) if has_cyrillic(&text) => {
                                 cache.insert(key.clone(), text.clone());
                                 control.inner.translated.fetch_add(1, Ordering::SeqCst);
@@ -416,10 +440,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     if cache.len() > 2000 {
                         cache.clear();
                     }
-                    if sample.is_empty() {
-                        sample = format!("{} → {}", clip(&key, 42), clip(&translated, 42));
+                    let score = translated.chars().count();
+                    if score > sample_score {
+                        sample_score = score;
+                        sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
                     }
                     let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
+                    let rect = widen(rect, &translated, frame.bounds());
                     if rect.height < 8 || rect.width < 8 {
                         continue;
                     }
@@ -447,35 +474,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     status.watched = name;
                     status.capture = method.to_owned();
                     publish(&control, &app, status);
-                    seen = fingerprint;
+                    last_sig = sig.clone();
+                    last_hwnd = hwnd;
+                    held.clear();
                     std::thread::sleep(Duration::from_millis(180));
                     continue;
                 }
 
-                let resized = match overlay.as_ref() {
-                    None => true,
-                    Some(surface) => surface.size() != (bounds.width, bounds.height),
-                };
-                if resized {
-                    overlay = LayeredOverlay::create(bounds).ok();
-                } else if let Some(surface) = overlay.as_mut() {
-                    if surface.move_to(bounds).is_err() {
-                        overlay = None;
-                    }
-                }
-                let Some(surface) = overlay.as_mut() else {
-                    let mut status = view(
-                        "error",
-                        "Не могу показать перевод",
-                        "Окно нашлось, но нарисовать поверх него не получилось. Пробую ещё раз.",
-                    );
-                    status.watched = name;
-                    status.capture = method.to_owned();
-                    status.sample = sample;
-                    publish(&control, &app, status);
-                    std::thread::sleep(Duration::from_millis(200));
-                    continue;
-                };
                 let layout = OverlayLayout::new(OverlayStyle::Plate).with_blocks(blocks);
                 let Some(compositor) = compositor.as_mut() else {
                     let mut status = view(
@@ -485,34 +490,45 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     );
                     status.watched = name;
                     status.capture = method.to_owned();
-                    status.sample = sample;
+                    status.sample = sample.clone();
                     publish(&control, &app, status);
-                    seen = fingerprint;
+                    held = sample;
+                    last_sig = sig.clone();
+                    last_hwnd = hwnd;
                     std::thread::sleep(Duration::from_millis(160));
                     continue;
                 };
                 let composition = compositor.compose(&frame, &layout);
-                if surface.present(&composition.frame, &composition.damage).is_err() {
+                if let Err(error) = show_on(&mut overlay, bounds, &composition.frame, &composition.damage) {
+                    log_once(&mut log_file, &mut last_log, &format!("present: {error}"));
                     overlay = None;
                     let mut status = view(
-                        "error",
-                        "Не могу показать перевод",
-                        "Текст переведён, но не лёг на окно. Пробую ещё раз.",
+                        "translating",
+                        "Перевожу",
+                        "Русский текст ниже. На само окно он ещё не лёг, пробую без мигания.",
                     );
                     status.watched = name;
                     status.capture = method.to_owned();
-                    status.sample = sample;
+                    status.sample = sample.clone();
                     publish(&control, &app, status);
+                    held = sample;
+                    last_sig = sig.clone();
+                    last_hwnd = hwnd;
+                    quiet_until = Instant::now() + Duration::from_secs(2);
                     std::thread::sleep(Duration::from_millis(200));
                     continue;
                 }
                 let mut status = view("translating", "Перевожу", "Английский на экране становится русским.");
                 status.watched = name;
                 status.capture = method.to_owned();
-                status.sample = sample;
+                status.sample = sample.clone();
                 publish(&control, &app, status);
-                seen = fingerprint;
-                std::thread::sleep(Duration::from_millis(160));
+                held = sample;
+                if !pending {
+                    last_sig = sig.clone();
+                    last_hwnd = hwnd;
+                }
+                std::thread::sleep(Duration::from_millis(if pending { 40 } else { 160 }));
         }
     }
 }
@@ -879,20 +895,172 @@ fn scale_rect(rect: Rect, scale: f32, width: u32, height: u32) -> Rect {
     scaled.clamp_to(&Rect::new(0, 0, width, height)).unwrap_or(scaled)
 }
 
-fn fingerprint_of(hwnd: isize, frame: &Frame, bounds: Rect) -> u64 {
-    let mut hash = hwnd as u64 ^ (bounds.x as u64) << 8 ^ bounds.y as u64;
-    let step = (frame.width() / 24).max(8);
-    let mut y = 0;
-    while y < frame.height() {
-        let mut x = 0;
-        while x < frame.width() {
-            let pixel = frame.pixel(x, y);
-            hash = hash.wrapping_mul(16777619) ^ u64::from(pixel[0]);
-            x += step;
-        }
-        y += step;
+fn picture_sig(frame: &Frame) -> Vec<u8> {
+    const COLS: u32 = 48;
+    const ROWS: u32 = 32;
+    if frame.width() == 0 || frame.height() == 0 {
+        return Vec::new();
     }
-    hash
+    let mut sig = Vec::with_capacity((COLS * ROWS) as usize);
+    for row in 0..ROWS {
+        let y0 = row * frame.height() / ROWS;
+        let y1 = ((row + 1) * frame.height() / ROWS).max(y0 + 1).min(frame.height());
+        for col in 0..COLS {
+            let x0 = col * frame.width() / COLS;
+            let x1 = ((col + 1) * frame.width() / COLS).max(x0 + 1).min(frame.width());
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            let step_x = ((x1 - x0) / 3).max(1);
+            let step_y = ((y1 - y0) / 3).max(1);
+            let mut y = y0;
+            while y < y1 {
+                let mut x = x0;
+                while x < x1 {
+                    let pixel = frame.pixel(x, y);
+                    sum += u32::from(pixel[0]) + u32::from(pixel[1]) + u32::from(pixel[2]);
+                    count += 1;
+                    x += step_x;
+                }
+                y += step_y;
+            }
+            sig.push((sum / count.max(1) / 3) as u8);
+        }
+    }
+    sig
+}
+
+/// A caret blink changes one or two cells. A new letter changes a cell by much more, and more
+/// than a couple of cells. The old exact fingerprint treated the caret as a new screen.
+fn picture_same(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() || left.is_empty() {
+        return false;
+    }
+    let changed = left.iter().zip(right).filter(|(a, b)| a.abs_diff(**b) > 22).count();
+    changed < 3
+}
+
+fn widen(rect: Rect, text: &str, bounds: Rect) -> Rect {
+    let chars = text.chars().count().max(1) as u32;
+    let size = (rect.height as f32 * 0.62).clamp(13.0, 32.0) as u32;
+    let needed = chars.saturating_mul(size).saturating_mul(3) / 5;
+    let grown = Rect::new(rect.x, rect.y, rect.width.max(needed), rect.height);
+    grown.clamp_to(&bounds).unwrap_or(rect)
+}
+
+fn show_on(overlay: &mut Option<LayeredOverlay>, bounds: Rect, frame: &Frame, damage: &[Rect]) -> Result<(), String> {
+    let mismatched = overlay
+        .as_ref()
+        .map(|surface| surface.size() != (bounds.width, bounds.height))
+        .unwrap_or(true);
+    let moved = if mismatched {
+        false
+    } else {
+        overlay
+            .as_mut()
+            .map(|surface| surface.move_to(bounds).is_ok())
+            .unwrap_or(false)
+    };
+    if mismatched || !moved {
+        *overlay = Some(LayeredOverlay::create(bounds).map_err(|error| error.to_string())?);
+    }
+    if let Some(surface) = overlay.as_mut() {
+        if surface.size() != (frame.width(), frame.height()) {
+            let _ = surface.resize(frame.width(), frame.height());
+        }
+        if surface.present(frame, damage).is_ok() {
+            return Ok(());
+        }
+    }
+    *overlay = Some(LayeredOverlay::create(bounds).map_err(|error| error.to_string())?);
+    let surface = overlay.as_mut().ok_or_else(|| "окно перевода не открылось".to_owned())?;
+    if surface.size() != (frame.width(), frame.height()) {
+        let _ = surface.resize(frame.width(), frame.height());
+    }
+    surface.present(frame, damage).map_err(|error| error.to_string())
+}
+
+fn translate_fully(translator: &mut Translator, text: &str) -> Result<String, String> {
+    let pieces = sentence_pieces(text);
+    if pieces.len() <= 1 {
+        return translator.translate(text);
+    }
+    let mut joined = String::new();
+    let mut last_error = None;
+    for piece in &pieces {
+        match translator.translate(piece) {
+            Ok(part) => {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                if !joined.is_empty() {
+                    joined.push(' ');
+                }
+                joined.push_str(part);
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    if joined.is_empty() {
+        Err(last_error.unwrap_or_else(|| "перевод пустой".to_owned()))
+    } else {
+        Ok(joined)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sentence_pieces;
+
+    #[test]
+    fn a_glued_notepad_line_is_three_sentences() {
+        let parts = sentence_pieces("Hello. Open the door. New game");
+        assert_eq!(parts, vec!["Hello.", "Open the door.", "New game"]);
+    }
+
+    #[test]
+    fn a_decimal_is_not_a_sentence_break() {
+        let parts = sentence_pieces("Damage 1.5");
+        assert_eq!(parts, vec!["Damage 1.5"]);
+    }
+}
+
+fn sentence_pieces(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    for index in 0..chars.len() {
+        if !matches!(chars[index], '.' | '!' | '?') {
+            continue;
+        }
+        let boundary = match chars.get(index + 1).copied() {
+            None => true,
+            Some(ch) if ch.is_whitespace() => true,
+            Some(ch) if ch.is_uppercase() => true,
+            _ => false,
+        };
+        if !boundary {
+            continue;
+        }
+        let piece: String = chars[start..=index].iter().collect();
+        let piece = piece.trim();
+        if piece.chars().any(|ch| ch.is_alphabetic()) {
+            parts.push(piece.to_owned());
+        }
+        start = index + 1;
+    }
+    let tail: String = chars[start..].iter().collect();
+    let tail = tail.trim();
+    if tail.chars().any(|ch| ch.is_alphabetic()) {
+        parts.push(tail.to_owned());
+    }
+    if parts.is_empty() {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_owned());
+        }
+    }
+    parts
 }
 
 #[derive(Clone, Serialize)]

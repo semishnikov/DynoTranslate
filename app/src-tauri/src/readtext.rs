@@ -123,14 +123,14 @@ impl Reader {
     fn recognize_lines(&mut self, frame: &Frame, lines: &[Rect]) -> Result<Vec<Recognition>, String> {
         let mut found = Vec::new();
         let mut last_error = None;
-        for line in lines.iter().take(8) {
+        for line in lines.iter().take(12) {
             let Some(crop) = frame.crop(*line) else {
                 continue;
             };
             if crop.width() < 8 || crop.height() < 6 {
                 continue;
             }
-            match self.recognize_crop(&crop) {
+            match self.read_line(&crop) {
                 Ok((text, confidence)) => {
                     let text = text.trim().to_owned();
                     if text.chars().any(|ch| ch.is_ascii_alphabetic()) {
@@ -150,6 +150,58 @@ impl Reader {
             }
         }
         Ok(found)
+    }
+
+    /// One visual line, with spaces put back between words.
+    ///
+    /// The recogniser often returns `Hello.Openthedoor.Newgame`. The picture still has the gaps,
+    /// so each word is read on its own and joined. The translator then sees the whole sentence.
+    fn read_line(&mut self, crop: &Frame) -> Result<(String, f32), String> {
+        let (whole, confidence) = self.recognize_crop(crop)?;
+        let whole = whole.trim();
+        if whole.is_empty() {
+            return Ok((String::new(), confidence));
+        }
+        if whole.contains(' ') {
+            return Ok((whole.to_owned(), confidence));
+        }
+        let spans = word_spans(crop);
+        if spans.len() < 2 || spans.len() > 16 {
+            return Ok((loosen(whole), confidence));
+        }
+        let mut parts = Vec::new();
+        let mut score = 0.0f32;
+        let mut kept = 0u32;
+        for (x, width) in spans {
+            let Some(word) = crop.crop(Rect::new(x, 0, width, crop.height())) else {
+                continue;
+            };
+            if word.width() < 2 || word.height() < 6 {
+                continue;
+            }
+            let Ok((text, part_score)) = self.recognize_crop(&word) else {
+                continue;
+            };
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            if text.chars().all(|ch| !ch.is_alphanumeric()) {
+                if let Some(last) = parts.last_mut() {
+                    last.push_str(text);
+                    continue;
+                }
+            }
+            parts.push(text.to_owned());
+            score += part_score;
+            kept += 1;
+        }
+        let joined = parts.join(" ");
+        if kept >= 2 && letters(&joined) + 1 >= letters(whole) {
+            let confidence = if kept == 0 { confidence } else { score / (kept as f32) };
+            return Ok((joined, confidence));
+        }
+        Ok((loosen(whole), confidence))
     }
 
     fn recognize_crop(&mut self, crop: &Frame) -> Result<(String, f32), String> {
@@ -641,6 +693,39 @@ fn download(url: &str, path: &Path, progress: &mut dyn FnMut(u64)) -> Result<(),
         }
     }
     file.flush().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paint(frame: &mut Frame, x: u32, width: u32) {
+        for dx in 0..width {
+            for y in 4..16 {
+                frame.set_pixel(x + dx, y, [20, 20, 20, 255]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_notepad_line_splits_on_word_gaps() {
+        let mut frame = Frame::filled(140, 22, [250, 250, 250, 255]).unwrap();
+        let mut x = 4u32;
+        for letters in [[3u32, 3, 1, 1, 3], [3, 3, 3, 1], [1, 3, 3], [3, 3, 3, 2], [3, 3, 3], [3, 1, 3, 3]] {
+            for width in letters {
+                paint(&mut frame, x, width);
+                x += width + 1;
+            }
+            x += 5;
+        }
+        let spans = word_spans(&frame);
+        assert_eq!(spans.len(), 6, "{spans:?}");
+    }
+
+    #[test]
+    fn glued_punctuation_gets_a_space() {
+        assert_eq!(loosen("Hello.Openthedoor.Newgame"), "Hello. Openthedoor. Newgame");
+    }
 }
 
 fn model_ok(path: &Path, minimum: u64) -> bool {
