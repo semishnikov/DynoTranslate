@@ -205,15 +205,35 @@ line, one-pixel block, empty fit, token overlap, translation-memory floor, break
 reopening from half-open) passed on both platforms. A one-pixel block classifies as a label,
 not a button; the first assertion said otherwise and was corrected before that run.
 
+## In progress: live translation correctness
+
+Continued on `arena/01a0ce82-dynotranslate`, branched from `main` (`6b5705b`) with the
+live-translator head of PR #13 (`c49a54d`) merged in as the base: the owner's installed
+build came from that line, and the three reported defects all live in it.
+
+- **The translation did not land in its block.** `Renderer::paint` baked `origin_y` into
+  each glyph's physical position and added it again when stamping, so every translation sat
+  `origin_y` pixels below its plate — the drift the owner's screenshots show. The origin is
+  now added once; `text_drawn_at_an_origin_lands_in_its_own_box` in the visual suite pins a
+  non-zero origin.
+- **Words glued together.** `read_line` only re-spaced a line when the recogniser returned
+  no space at all, so `Whenlifegivesyoulemons, drinktequila` (one space) skipped the fix.
+  The word split now runs whenever the picture has more word gaps than the read has spaces.
+- **Technical chrome "translated".** The Latin-only recogniser misread Russian titles,
+  menus and status lines as Latin garbage and the loop translated the garbage over them.
+  The reader now uses the cyrillic PP-OCRv3 rec model (Latin plus Cyrillic; the alphabet is
+  PaddleOCR's `cyrillic_dict.txt` byte for byte, cached under a new file name so the old
+  English cache is not reused), the loop skips any line containing Cyrillic, and a
+  vowel-bearing-word guard drops recognition noise — nothing is drawn over text that is not
+  really English content. The plate also hugs the typeset translation instead of a
+  character-count guess, so a short label no longer becomes a window-wide bar.
+
 ## Next
 
-1. **Build the real loop**, as written in `docs/DELIVERY.md`. The owner asked for an
-   application that translates a live screen, and said they will not store secrets, create
-   tokens, or rehearse tags in order to see it. The installer in draft PR #13 packages a
-   shell. It does not translate. Do not open M7. Do not add another stand-in. The next
-   change is Windows capture, Windows OCR, a real English-to-Russian model, and the overlay,
-   in one installer the owner only has to download. Pull requests #11 and #12 stay closed
-   to merging. The signing key and `UPDATER_PAT` wait until a public update exists.
+1. **Land the live correctness fixes** from the section above: four CI jobs plus the
+   installer bundle job of this branch's run, then a fresh installer for the owner to try
+   against the same Notepad scene. Pull requests #11 and #12 stay closed to merging. The
+   signing key and `UPDATER_PAT` wait until a public update exists.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
