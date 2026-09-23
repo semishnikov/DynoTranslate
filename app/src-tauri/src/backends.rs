@@ -30,7 +30,7 @@ pub fn translate_batch(
     settings: &LiveSettings,
 ) -> Result<Vec<String>, String> {
     match backend {
-        "google" => lines.iter().map(google_one).collect(),
+        "google" => lines.iter().map(|line| google_one(line)).collect(),
         "deepl" => deepl(lines, settings),
         "openai" => openai(lines, context, settings),
         other => Err(format!("unknown translator backend {other:?}")),
@@ -153,7 +153,7 @@ fn openai(lines: &[String], context: &[(String, String)], settings: &LiveSetting
         .post("https://api.openai.com/v1/chat/completions")
         .set("Authorization", &format!("Bearer {}", settings.openai_key.trim()))
         .set("Content-Type", "application/json")
-        .send_string(body.to_string())
+        .send_string(&body.to_string())
         .map_err(|error| format!("openai: {error}"))?;
     let body = response
         .into_string()

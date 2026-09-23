@@ -278,7 +278,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
     };
     let mut overlay: Option<LayeredOverlay> = None;
     let mut cache: HashMap<String, String> = HashMap::new();
-    /// Recent source/translation pairs; the LLM backends read it for coherence.
+    // Recent source/translation pairs; the LLM backends read it for coherence.
     let mut context: VecDeque<(String, String)> = VecDeque::new();
     let mut last_sig: Vec<u8> = Vec::new();
     let mut last_hwnd = 0isize;
