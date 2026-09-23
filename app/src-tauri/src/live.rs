@@ -756,7 +756,7 @@ fn preview_data_url(frame: &Frame) -> String {
         return String::new();
     }
     let (width, height, scale) = preview_size(frame.width(), frame.height());
-    let row_stride = ((width * 3 + 3) / 4) * 4;
+    let row_stride = (width * 3).div_ceil(4) * 4;
     let pixel_bytes = row_stride * height;
     let file_size = 54u32 + pixel_bytes;
     let mut bmp = vec![0u8; file_size as usize];
@@ -1214,10 +1214,7 @@ fn resolve_target(control: &Control) -> Option<(isize, String)> {
             Some((hwnd, title))
         }
         Focus::Ours | Focus::None => {
-            let sticky = lock(&control.inner.sticky).clone();
-            let Some(sticky) = sticky else {
-                return None;
-            };
+            let sticky = lock(&control.inner.sticky).clone()?;
             if window_alive(sticky.id) {
                 Some((sticky.id as isize, sticky.title))
             } else {

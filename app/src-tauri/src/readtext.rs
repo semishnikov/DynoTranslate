@@ -209,7 +209,7 @@ impl Reader {
 
     fn recognize_crop(&mut self, crop: &Frame) -> Result<(String, f32), String> {
         let natural = ((48.0 * crop.width() as f32 / crop.height() as f32).ceil() as u32).clamp(8, 960);
-        let aligned = ((natural + 7) / 8) * 8;
+        let aligned = natural.div_ceil(8) * 8;
         if let Some(fixed) = self.rec_width {
             return self.recognize_at(crop, natural.min(fixed), fixed);
         }
@@ -351,8 +351,8 @@ fn probability_map(shape: &[i64], values: &[f32]) -> Result<(u32, u32, Vec<f32>)
         }
         [height, width, channels] if *channels <= 4 && *height > 8 && *width > 8 => {
             let mut planar = vec![0f32; height * width];
-            for index in 0..planar.len() {
-                planar[index] = values.get(index * channels).copied().unwrap_or(0.0);
+            for (index, cell) in planar.iter_mut().enumerate() {
+                *cell = values.get(index * channels).copied().unwrap_or(0.0);
             }
             Ok((*width as u32, *height as u32, planar))
         }
@@ -723,14 +723,14 @@ mod tests {
         let mut frame = Frame::filled(140, 22, [250, 250, 250, 255]).unwrap();
         let mut x = 4u32;
         for letters in [
-            [3u32, 3, 1, 1, 3],
-            [3, 3, 3, 1],
-            [1, 3, 3],
-            [3, 3, 3, 2],
-            [3, 3, 3],
-            [3, 1, 3, 3],
+            &[3u32, 3, 1, 1, 3][..],
+            &[3, 3, 3, 1],
+            &[1, 3, 3],
+            &[3, 3, 3, 2],
+            &[3, 3, 3],
+            &[3, 1, 3, 3],
         ] {
-            for width in letters {
+            for &width in letters {
                 paint(&mut frame, x, width);
                 x += width + 1;
             }

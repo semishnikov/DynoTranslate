@@ -301,10 +301,10 @@ fn is_empty_precompiled(value: &serde_json::Value) -> bool {
     if value.get("type").and_then(|item| item.as_str()) != Some("Precompiled") {
         return false;
     }
-    match value.get("precompiled_charsmap") {
-        Some(serde_json::Value::String(text)) if !text.is_empty() => false,
-        _ => true,
-    }
+    !matches!(
+        value.get("precompiled_charsmap"),
+        Some(serde_json::Value::String(text)) if !text.is_empty()
+    )
 }
 
 fn panic_payload(error: &(dyn std::any::Any + Send)) -> String {
