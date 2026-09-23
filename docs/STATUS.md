@@ -251,10 +251,15 @@ bar, ONNX sessions use up to four intra-op threads (`model::ort_threads`), and t
 stream three bubbles per tick with recomposition every 30 ms instead of one long blocking
 batch.
 
-Verified on `e538679`: CI run 35897093049 is green on all four jobs and Release run
-35897093017 uploads `installer-windows`. This build carries the stage journal (`live.log`,
-path shown in the UI), the word-shape garbage gate, the 0.45 mean-confidence floor and the
-0.6 fitting floor. The on-screen result is not verified here: no display, no Windows.
+Verified on `793d3a1`: CI run 35902494695 is green on all four jobs and Release run
+35902494808 uploads `installer-windows` (28,921,067 bytes), green on the first push of the
+cycle. This build restores the pipeline the owner validated on run 35864974348 (`c49a54d`):
+English PP-OCRv3 recognition and per-line translation at eight lines per tick. Removed since
+the last verified build: bubble grouping, the confidence gate, the word-shape gate and the
+target-plausibility gate — together they shrank coverage to a few percent and merged whole
+columns into one full-width plate. Kept: the stage journal with its path in the UI, sampled
+plate colours, 2 px padding, four ONNX threads, 30 ms streaming recompose. The on-screen
+result is not verified here: no display, no Windows.
 
 ## Next
 
