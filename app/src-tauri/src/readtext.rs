@@ -728,6 +728,102 @@ mod tests {
     }
 }
 
+/// Columns that belong to each word. A one- or two-pixel gap is letter spacing; a wider gap is a space.
+fn word_spans(crop: &Frame) -> Vec<(u32, u32)> {
+    let width = crop.width();
+    let height = crop.height();
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    let background = background_luminance(crop);
+    let mut ink = vec![false; width as usize];
+    for x in 0..width {
+        for y in 0..height {
+            if luminance(crop.pixel(x, y)).abs_diff(background) >= 48 {
+                ink[x as usize] = true;
+                break;
+            }
+        }
+    }
+    let mut runs = Vec::new();
+    let mut index = 0usize;
+    while index < ink.len() {
+        if !ink[index] {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < ink.len() && ink[index] {
+            index += 1;
+        }
+        runs.push((start as u32, (index - start) as u32));
+    }
+    if runs.is_empty() {
+        return runs;
+    }
+    let mut words = Vec::new();
+    let (mut start, mut span) = runs[0];
+    for &(next, next_span) in &runs[1..] {
+        let gap = next.saturating_sub(start + span);
+        if gap < 3 {
+            span = next + next_span - start;
+        } else {
+            words.push((start, span));
+            start = next;
+            span = next_span;
+        }
+    }
+    words.push((start, span));
+    words
+}
+
+fn background_luminance(crop: &Frame) -> u8 {
+    let mut histogram = [0u32; 256];
+    let mut total = 0u32;
+    for y in 0..crop.height() {
+        for x in 0..crop.width() {
+            histogram[luminance(crop.pixel(x, y)) as usize] += 1;
+            total += 1;
+        }
+    }
+    let mut seen = 0u32;
+    for (value, count) in histogram.iter().enumerate() {
+        seen += count;
+        if seen * 2 >= total {
+            return value as u8;
+        }
+    }
+    255
+}
+
+fn luminance(pixel: [u8; 4]) -> u8 {
+    let blue = pixel[0] as u16;
+    let green = pixel[1] as u16;
+    let red = pixel[2] as u16;
+    ((red * 3 + green * 6 + blue) / 10) as u8
+}
+
+fn letters(text: &str) -> usize {
+    text.chars().filter(|ch| ch.is_alphanumeric()).count()
+}
+
+/// `Hello.Openthedoor.Newgame` still has the sentence dots. Put the spaces back so each sentence can be translated.
+fn loosen(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(chars.len() + 4);
+    for (index, ch) in chars.iter().copied().enumerate() {
+        out.push(ch);
+        if matches!(ch, '.' | '!' | '?' | ',' | ':' | ';') {
+            if let Some(next) = chars.get(index + 1).copied() {
+                if !next.is_whitespace() {
+                    out.push(' ');
+                }
+            }
+        }
+    }
+    out
+}
+
 fn model_ok(path: &Path, minimum: u64) -> bool {
     let Ok(meta) = fs::metadata(path) else {
         return false;
