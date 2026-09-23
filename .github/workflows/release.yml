@@ -121,19 +121,6 @@ jobs:
             done
             exit "$code"
           fi
-          (cd src-tauri && cargo build --release) > runtime-build.txt 2>&1
-          code=$?
-          if [ "$code" != 0 ]; then
-            sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt > runtime-clean.txt
-            grep -E "error(\[|:)|--> " runtime-clean.txt | head -n 30 > runtime-hits.txt
-            if [ ! -s runtime-hits.txt ]; then
-              tail -n 25 runtime-clean.txt > runtime-hits.txt
-            fi
-            while IFS= read -r line; do
-              printf '::error title=runtime-build::%s\n' "${line//'%'/'%25'}"
-            done < runtime-hits.txt
-            exit "$code"
-          fi
           set -e
           mkdir -p src-tauri/resources
           nupkg="$RUNNER_TEMP/directml.nupkg"
@@ -165,6 +152,22 @@ jobs:
             echo "::error title=runtime-build::DirectML.dll was not found for the installer"
             exit 1
           fi
+          ls -l src-tauri/resources/DirectML.dll
+          set +e
+          (cd src-tauri && cargo build --release) > runtime-build.txt 2>&1
+          code=$?
+          if [ "$code" != 0 ]; then
+            sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt > runtime-clean.txt
+            grep -E "error(\[|:)|--> |does not exist" runtime-clean.txt | head -n 30 > runtime-hits.txt
+            if [ ! -s runtime-hits.txt ]; then
+              tail -n 25 runtime-clean.txt > runtime-hits.txt
+            fi
+            while IFS= read -r line; do
+              printf '::error title=runtime-build::%s\n' "${line//'%'/'%25'}"
+            done < runtime-hits.txt
+            exit "$code"
+          fi
+          set -e
           ls -l src-tauri/resources/DirectML.dll
 
       - name: Build the installer
