@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/release.yml'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bundle-windows:
+    name: Bundle (windows-latest)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install the toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install the frontend
+        working-directory: app
+        run: npm ci
+
+      - name: Refuse an unsigned release
+        if: github.ref_type == 'tag' && env.TAURI_SIGNING_PRIVATE_KEY == ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY secret to publish a release"
+          exit 1
+
+      - name: Release signing key
+        if: github.ref_type == 'tag'
+        run: echo "TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> "$GITHUB_ENV"
+
+      # `tauri build` signs updater artifacts with TAURI_SIGNING_PRIVATE_KEY, read as
+      # key contents or as a path. TAURI_SIGNING_PRIVATE_KEY_PATH is only honoured by
+      # `tauri signer sign` (tauri-apps/tauri#15028); exporting that name is why the
+      # previous installer builds compiled and then aborted with no key.
+      - name: Ephemeral signing key for a non-release build
+        if: github.ref_type != 'tag'
+        working-directory: app
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/lumen-ephemeral.key"
+          npx tauri signer generate -w "$key_file" -f --ci
+          # The committed pubkey is the release key. A pull-request build signs with
+          # this throwaway pair, so the binary must embed this public half or the
+          # bundler warns that updates signed here will be rejected at runtime.
+          pub=$(tr -d '\r\n' < "${key_file}.pub")
+          cfg="$RUNNER_TEMP/lumen-updater.json"
+          printf '{"plugins":{"updater":{"pubkey":"%s"}}}\n' "$pub" > "$cfg"
+          # A mixed path has no backslashes for bash to mangle, and the Windows
+          # bundler opens it as a normal path.
+          if command -v cygpath >/dev/null 2>&1; then
+            key_file="$(cygpath -m "$key_file")"
+            cfg="$(cygpath -m "$cfg")"
+          fi
+          echo "TAURI_SIGNING_PRIVATE_KEY=$key_file" >> "$GITHUB_ENV"
+          echo "LUMEN_UPDATER_CONFIG=$cfg" >> "$GITHUB_ENV"
+          # --ci encrypts the key with an empty password. An unset password makes
+          # the bundler prompt, which cannot succeed in this job.
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
+
+      - name: The bundler can open the signing key
+        if: github.ref_type != 'tag'
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error title=signing::TAURI_SIGNING_PRIVATE_KEY is unset"
+            exit 1
+          fi
+          # Fail here, in seconds, rather than after the compile. The check is the
+          # Windows process's view of the path, which is the view tauri.exe has.
+          if ! powershell.exe -NoProfile -Command 'if (-not (Test-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY)) { exit 1 }'; then
+            echo "::error title=signing::the Windows bundler cannot open the signing key"
+            exit 1
+          fi
+
+      - name: Describe the Tauri setup
+        working-directory: app
+        run: npx tauri info > tauri-info.txt 2>&1; code=$?; cat tauri-info.txt; exit $code
+
+      # Non-release builds run the CLI directly so the full build output is available to
+      # the failure reporter below. Tagged releases go through tauri-action instead: it
+      # assembles the updater JSON and the draft release, and the owner rehearses that
+      # path on a machine where the action logs are readable.
+      # The translation runtime is linked into the program, so there is no
+      # onnxruntime.dll to ship. DirectML.dll is still loaded when the program
+      # starts, and it has to be in the installer.
+      - name: Build the translation runtime
+        working-directory: app
+        run: |
+          set +e
+          npm run build > frontend-build.txt 2>&1
+          code=$?
+          if [ "$code" != 0 ]; then
+            sed 's/\x1b\[[0-9;]*m//g' frontend-build.txt | tail -n 20 | while IFS= read -r line; do
+              printf '::error title=frontend-build::%s\n' "${line//'%'/'%25'}"
+            done
+            exit "$code"
+          fi
+          set -e
+          mkdir -p src-tauri/resources
+          nupkg="$RUNNER_TEMP/directml.nupkg"
+          zip="$(cygpath -u "$RUNNER_TEMP")/directml.zip"
+          extract_unix="$(cygpath -u "$RUNNER_TEMP")/directml-pkg"
+          rm -rf "$extract_unix"
+          mkdir -p "$extract_unix"
+          if curl -fsSL -o "$nupkg" "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg"; then
+            cp -f "$nupkg" "$zip"
+            zip_win=$(cygpath -w "$zip")
+            extract_win=$(cygpath -w "$extract_unix")
+            if powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$zip_win' -DestinationPath '$extract_win' -Force"; then
+              found=$(find "$extract_unix" -iname 'DirectML.dll' | grep -i '/x64' | head -n 1 || true)
+              if [ -z "$found" ]; then
+                found=$(find "$extract_unix" -iname 'DirectML.dll' | head -n 1 || true)
+              fi
+              if [ -n "$found" ]; then
+                cp -f "$found" src-tauri/resources/DirectML.dll
+              fi
+            fi
+          fi
+          if [ ! -f src-tauri/resources/DirectML.dll ]; then
+            sys=$(cygpath -u "$SYSTEMROOT/System32/DirectML.dll")
+            if [ -f "$sys" ]; then
+              cp -f "$sys" src-tauri/resources/DirectML.dll
+            fi
+          fi
+          if [ ! -f src-tauri/resources/DirectML.dll ]; then
+            echo "::error title=runtime-build::DirectML.dll was not found for the installer"
+            exit 1
+          fi
+          ls -l src-tauri/resources/DirectML.dll
+          set +e
+          (cd src-tauri && cargo build --release) > runtime-build.txt 2>&1
+          code=$?
+          if [ "$code" != 0 ]; then
+            sed 's/\x1b\[[0-9;]*m//g' runtime-build.txt > runtime-clean.txt
+            grep -E "error(\[|:)|--> |does not exist" runtime-clean.txt | head -n 30 > runtime-hits.txt
+            if [ ! -s runtime-hits.txt ]; then
+              tail -n 25 runtime-clean.txt > runtime-hits.txt
+            fi
+            while IFS= read -r line; do
+              printf '::error title=runtime-build::%s\n' "${line//'%'/'%25'}"
+            done < runtime-hits.txt
+            exit "$code"
+          fi
+          set -e
+          ls -l src-tauri/resources/DirectML.dll
+
+      - name: Build the installer
+        if: github.ref_type != 'tag'
+        working-directory: app
+        run: |
+          set +e
+          if [ -n "${LUMEN_UPDATER_CONFIG:-}" ]; then
+            npx tauri build --config "$LUMEN_UPDATER_CONFIG" > tauri-build.txt 2>&1
+          else
+            npx tauri build > tauri-build.txt 2>&1
+          fi
+          code=$?
+          if [ "$code" != 0 ]; then
+            # This step has its own annotation budget, which is the only log the
+            # development environment can read. The failure is at the end of the
+            # log. A grep for "error" matches the `thiserror` crates cargo
+            # downloads, and that is what the previous run reported instead of
+            # the bundler error.
+            if [ -s tauri-build.txt ]; then
+              sed 's/\x1b\[[0-9;]*m//g' tauri-build.txt | tail -n 8 > build-hits.txt
+              while IFS= read -r line; do
+                printf '::error title=tauri-build::%s\n' "${line//'%'/'%25'}"
+              done < build-hits.txt
+            else
+              echo "::error title=tauri-build::tauri build produced no output and exited ${code}"
+            fi
+          fi
+          exit "$code"
+
+      - name: Build and release
+        if: github.ref_type == 'tag'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the binary at compile time (option_env!); the updater sends it as
+          # a Bearer token so release downloads work against this private repository.
+          UPDATER_PAT: ${{ secrets.UPDATER_PAT }}
+        with:
+          projectPath: app
+          tauriScript: npm run tauri
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('Lumen {0}', github.ref_name) || '' }}
+          releaseBody: See the assets to download and install this version.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: |
+            app/src-tauri/target/release/bundle/msi/*.msi
+            app/src-tauri/target/release/bundle/nsis/*-setup.exe
+          retention-days: 14
+
+      # Backup for a failure that happened before the build step could annotate.
+      # Build errors go first: GitHub keeps about ten error annotations per step, and
+      # anything emitted before them is what the development environment will see.
+      - name: Report what failed
+        if: failure()
+        working-directory: app
+        run: |
+          set +e
+          if [ -s tauri-build.txt ]; then
+            sed 's/\x1b\[[0-9;]*m//g' tauri-build.txt | tail -n 8 > build-hits.txt
+            while IFS= read -r line; do
+              printf '::error title=tauri-build::%s\n' "${line//'%'/'%25'}"
+            done < build-hits.txt
+          elif [ -f tauri-info.txt ]; then
+            tail -n 8 tauri-info.txt | while IFS= read -r line; do
+              printf '::error title=tauri-info::%s\n' "${line//'%'/'%25'}"
+            done
+          fi

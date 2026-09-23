@@ -151,6 +151,19 @@ mod tests {
     }
 
     #[test]
+    fn no_runs_produce_no_lines() {
+        assert!(group_lines(Vec::new(), &config()).is_empty());
+    }
+
+    #[test]
+    fn a_zero_height_run_does_not_join_a_row() {
+        let flat = TextRun::new("flat", Rect::new(40, 40, 20, 0), SourceKind::Ocr, 0.9);
+        let lines = group_lines(vec![run("row", 10, 40, 20), flat], &config());
+
+        assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
     fn a_line_is_only_as_confident_as_its_weakest_run() {
         let weak = TextRun::new("weak", Rect::new(10, 10, 20, 12), SourceKind::Ocr, 0.4);
         let strong = run("strong", 40, 10, 20);

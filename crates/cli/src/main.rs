@@ -3,10 +3,15 @@
 //! Runs a scene (or a PNG) through change detection, scheduling and overlay composition, then
 //! writes the composited overlay and a machine-readable report. Fidelity work and benchmarks are
 //! driven through this binary so they produce the same numbers on a workstation and on a build
-//! agent.
+//! agent. The soak and chaos modes run the same pipeline under a long continuous workload and
+//! under scripted faults, and report memory growth and fail-open behaviour as JSON.
 
+mod alloc;
+mod chaos;
 mod report;
+mod rng;
 mod run;
+mod soak;
 mod source;
 
 use std::path::PathBuf;
@@ -20,6 +25,8 @@ lumen-pipeline — run a frame sequence through the Lumen pipeline without a dis
 Usage:
   lumen-pipeline --scene menu [options]
   lumen-pipeline --input <frame.png> [options]
+  lumen-pipeline --soak <frames> [options]
+  lumen-pipeline --chaos <frames> [options]
 
 Options:
   --scene <name>        Built-in scene to run. Currently: menu
@@ -31,6 +38,10 @@ Options:
   --style <name>        Overlay style: seamless, plate, subtitles (default: seamless)
   --speed <name>        Responsiveness: fast, balanced, accurate (default: balanced)
   --no-images           Write only the report
+  --no-reuse            Read the whole frame on every pass, for comparison with the default
+  --soak <frames>       Run the soak harness and print a JSON memory report
+  --chaos <frames>      Run the chaos harness under scripted faults and print a JSON report
+  --seed <number>       Seed for the soak and chaos scene plans (default 0)
   -h, --help            Show this message
 ";
 
@@ -45,6 +56,10 @@ pub struct Options {
     pub style: lumen_overlay::OverlayStyle,
     pub speed: Responsiveness,
     pub write_images: bool,
+    pub reuse_previous: bool,
+    pub soak_frames: Option<u32>,
+    pub chaos_frames: Option<u32>,
+    pub seed: u64,
 }
 
 impl Default for Options {
@@ -59,6 +74,10 @@ impl Default for Options {
             style: lumen_overlay::OverlayStyle::Seamless,
             speed: Responsiveness::Balanced,
             write_images: true,
+            reuse_previous: true,
+            soak_frames: None,
+            chaos_frames: None,
+            seed: 0,
         }
     }
 }
@@ -81,14 +100,38 @@ fn main() -> ExitCode {
         }
     };
 
-    match run::execute(&options) {
-        Ok(summary) => {
-            println!("{summary}");
-            ExitCode::SUCCESS
+    if let Some(frames) = options.soak_frames {
+        match soak::execute(frames, &options) {
+            Ok(report) => {
+                println!("{report}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("soak failed: {error}");
+                ExitCode::FAILURE
+            }
         }
-        Err(error) => {
-            eprintln!("pipeline failed: {error}");
-            ExitCode::FAILURE
+    } else if let Some(frames) = options.chaos_frames {
+        match chaos::execute(frames, &options) {
+            Ok(report) => {
+                println!("{report}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("chaos failed: {error}");
+                ExitCode::FAILURE
+            }
+        }
+    } else {
+        match run::execute(&options) {
+            Ok(summary) => {
+                println!("{summary}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("pipeline failed: {error}");
+                ExitCode::FAILURE
+            }
         }
     }
 }
@@ -124,11 +167,16 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Option<Options>, String> 
                 }
             }
             "--no-images" => options.write_images = false,
+            "--no-reuse" => options.reuse_previous = false,
+            "--soak" => options.soak_frames = Some(parse_number(&value()?, "--soak")?),
+            "--chaos" => options.chaos_frames = Some(parse_number(&value()?, "--chaos")?),
+            "--seed" => options.seed = parse_seed(&value()?, "--seed")?,
             other => return Err(format!("unknown argument: {other}")),
         }
     }
 
-    if options.scene.is_none() && options.input.is_none() {
+    let no_run_selected = options.soak_frames.is_none() && options.chaos_frames.is_none();
+    if options.scene.is_none() && options.input.is_none() && no_run_selected {
         options.scene = Some("menu".to_owned());
     }
     if options.width == 0 || options.height == 0 {
@@ -144,9 +192,26 @@ fn parse_number(value: &str, flag: &str) -> Result<u32, String> {
         .map_err(|_| format!("{flag} expects a whole number, got {value}"))
 }
 
+fn parse_seed(value: &str, flag: &str) -> Result<u64, String> {
+    value
+        .parse()
+        .map_err(|_| format!("{flag} expects a whole number, got {value}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn install_annotations() {
+        use std::sync::Once;
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            std::panic::set_hook(Box::new(|info| {
+                let msg = info.to_string().replace('\n', " | ");
+                eprintln!("::error title=test-panic::{msg}");
+            }));
+        });
+    }
 
     fn parse_args(args: &[&str]) -> Result<Option<Options>, String> {
         parse(args.iter().map(|arg| (*arg).to_owned()))
@@ -154,28 +219,34 @@ mod tests {
 
     #[test]
     fn defaults_to_the_menu_scene() {
+        install_annotations();
         let options = parse_args(&[]).unwrap().unwrap();
         assert_eq!(options.scene.as_deref(), Some("menu"));
         assert_eq!((options.width, options.height), (1280, 720));
+        assert!(options.reuse_previous);
     }
 
     #[test]
     fn help_stops_before_running() {
+        install_annotations();
         assert!(parse_args(&["--help"]).unwrap().is_none());
     }
 
     #[test]
     fn unknown_arguments_are_rejected() {
+        install_annotations();
         assert!(parse_args(&["--turbo"]).is_err());
     }
 
     #[test]
     fn a_flag_without_its_value_is_rejected() {
+        install_annotations();
         assert!(parse_args(&["--width"]).is_err());
     }
 
     #[test]
     fn styles_and_speeds_are_parsed() {
+        install_annotations();
         let options = parse_args(&["--style", "plate", "--speed", "fast"]).unwrap().unwrap();
         assert_eq!(options.style, lumen_overlay::OverlayStyle::Plate);
         assert_eq!(options.speed, Responsiveness::Fast);
@@ -184,6 +255,24 @@ mod tests {
 
     #[test]
     fn zero_dimensions_are_rejected() {
+        install_annotations();
         assert!(parse_args(&["--width", "0"]).is_err());
+    }
+
+    #[test]
+    fn the_soak_and_chaos_flags_carry_a_frame_count_and_a_seed() {
+        install_annotations();
+        let options = parse_args(&["--soak", "600", "--seed", "7"]).unwrap().unwrap();
+        assert_eq!(options.soak_frames, Some(600));
+        assert_eq!(options.chaos_frames, None);
+        assert_eq!(options.seed, 7);
+        assert!(
+            options.scene.is_none(),
+            "a soak run does not fall back to the menu scene",
+        );
+
+        let options = parse_args(&["--chaos", "400", "--no-reuse"]).unwrap().unwrap();
+        assert_eq!(options.chaos_frames, Some(400));
+        assert!(!options.reuse_previous);
     }
 }

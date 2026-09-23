@@ -227,6 +227,26 @@ mod tests {
     }
 
     #[test]
+    fn empty_text_keeps_the_preferred_size() {
+        install_annotations();
+        let spec = TextSpec::new("", 20, 20, 16);
+        let fitted = fit_text(&spec, fake_measure).unwrap();
+        assert_eq!(fitted.size, 16.0);
+        assert!(!fitted.at_floor);
+    }
+
+    #[test]
+    fn a_single_character_wider_than_the_box_shrinks_toward_the_floor() {
+        install_annotations();
+        // One character is `size * 0.5` wide. At 16 that is 8, against a 4-wide box.
+        let spec = TextSpec::new("W", 4, 40, 16);
+        let fitted = fit_text(&spec, fake_measure).unwrap();
+        assert!(fitted.size < 16.0);
+        assert!(fitted.size >= 16.0 * 0.8 - 0.001, "{}", fitted.size);
+        assert!(fitted.at_floor);
+    }
+
+    #[test]
     fn an_empty_box_is_an_error() {
         install_annotations();
         let spec = TextSpec::new("x", 0, 10, 16);

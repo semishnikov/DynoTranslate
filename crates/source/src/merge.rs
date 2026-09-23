@@ -31,8 +31,12 @@ impl Default for MergePolicy {
 /// run, then the longer text. A run sharing at least `policy.min_iou` of its area with an already
 /// accepted run is dropped, so a label both sources read is translated once and the exact
 /// characters from the accessibility tree are the ones that survive.
+///
+/// Empty runs and zero-area runs are dropped before that ranking. They have no characters to
+/// translate and no pixels to draw over, and a zero-area box would survive every overlap test.
 pub fn merge(runs: Vec<TextRun>, policy: &MergePolicy) -> Vec<TextRun> {
     let mut ranked = runs;
+    ranked.retain(|run| !run.text.trim().is_empty() && !run.bounds.is_empty());
     ranked.sort_by(by_trust);
 
     let mut kept: Vec<TextRun> = Vec::with_capacity(ranked.len());
@@ -180,5 +184,17 @@ mod tests {
     #[test]
     fn nothing_in_nothing_out() {
         assert!(merge(Vec::new(), &MergePolicy::default()).is_empty());
+    }
+
+    #[test]
+    fn empty_and_zero_area_runs_are_dropped() {
+        let blank = run("   ", Rect::new(0, 0, 10, 10), SourceKind::Ocr, 0.9);
+        let empty = run("", Rect::new(20, 0, 10, 10), SourceKind::UiAutomation, 1.0);
+        let flat = run("flat", Rect::new(40, 0, 10, 0), SourceKind::Ocr, 0.9);
+        let kept = run("kept", Rect::new(60, 0, 10, 10), SourceKind::Ocr, 0.8);
+
+        let merged = merge(vec![blank, empty, flat, kept], &MergePolicy::default());
+
+        assert_eq!(texts(&merged), vec!["kept"]);
     }
 }

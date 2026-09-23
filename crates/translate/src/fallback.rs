@@ -219,4 +219,75 @@ mod tests {
         fallback.advance_time(5_001);
         assert!(fallback.circuit_breaker_mut().allow_request(5_001));
     }
+
+    #[test]
+    fn a_failure_while_half_open_reopens_the_circuit() {
+        let mut breaker = CircuitBreaker::new(3, 1_000);
+        breaker.record_failure(0);
+        breaker.record_failure(0);
+        breaker.record_failure(0);
+        assert_eq!(breaker.state(), CircuitState::Open);
+        assert!(breaker.allow_request(1_000));
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_failure(1_000);
+        assert_eq!(breaker.state(), CircuitState::Open);
+        assert!(!breaker.allow_request(1_500));
+    }
+
+    #[test]
+    fn two_successes_while_half_open_close_the_circuit() {
+        let mut breaker = CircuitBreaker::new(1, 100);
+        breaker.record_failure(0);
+        assert_eq!(breaker.state(), CircuitState::Open);
+        assert!(breaker.allow_request(100));
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_success();
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_success();
+        assert_eq!(breaker.state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn an_open_circuit_does_not_call_the_primary() {
+        struct PanicIfCalledAgain {
+            calls: usize,
+        }
+        impl TranslationEngine for PanicIfCalledAgain {
+            fn translate(&mut self, _req: &TranslationRequest) -> Result<TranslationResponse, TranslationError> {
+                self.calls += 1;
+                if self.calls > 2 {
+                    panic!("primary called while the circuit was open");
+                }
+                Err(TranslationError::Network("down".to_owned()))
+            }
+
+            fn is_available(&self, _s: Language, _t: Language) -> bool {
+                true
+            }
+
+            fn engine_kind(&self) -> EngineKind {
+                EngineKind::Online
+            }
+        }
+
+        let breaker = CircuitBreaker::new(2, 60_000);
+        let mut fallback = FallbackEngine::new(PanicIfCalledAgain { calls: 0 }, StubTranslationEngine::new(), breaker);
+        let request = TranslationRequest {
+            items: vec![TranslateItem {
+                id: 1,
+                text: "Quit".to_owned(),
+                kind: None,
+            }],
+            source_language: Language::English,
+            target_language: Language::Russian,
+            context: None,
+            app_id: None,
+        };
+
+        for _ in 0..3 {
+            let translated = fallback.translate(&request).unwrap();
+            assert_eq!(translated.items[0].translated, "Выход");
+        }
+        assert_eq!(fallback.circuit_breaker().state(), CircuitState::Open);
+    }
 }

@@ -16,6 +16,7 @@ lumen-capture = { workspace = true }
 lumen-core = { workspace = true }
 lumen-language = { workspace = true }
 lumen-layout = { workspace = true }
+lumen-ocr = { workspace = true }
 lumen-overlay = { workspace = true }
 lumen-render = { workspace = true }
 lumen-source = { workspace = true }

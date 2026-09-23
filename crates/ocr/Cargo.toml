@@ -11,3 +11,14 @@ repository.workspace = true
 lumen-core = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.58"
+features = [
+    "Foundation",
+    "Foundation_Collections",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
+]
