@@ -161,6 +161,18 @@ impl Compositor {
         self.previous = None;
     }
 
+    /// The regions the previous composition painted.
+    ///
+    /// The pipeline uses them to decide whether a changed frame can skip re-composing: when no
+    /// changed region touches what the overlay already drew, the overlay content is unchanged
+    /// and re-presenting it would only risk flicker.
+    pub fn last_painted(&self) -> &[Rect] {
+        match &self.previous {
+            Some(rects) => rects,
+            None => &[],
+        }
+    }
+
     /// Composes the overlay over `source`. The returned frame is the same size as the source and
     /// fully transparent wherever nothing was drawn.
     pub fn compose(&mut self, source: &Frame, layout: &OverlayLayout) -> Composition {
@@ -544,5 +556,59 @@ mod tests {
                 .to_vec()
         };
         assert_eq!(compose(), compose());
+    }
+
+    #[test]
+    fn last_painted_reports_the_previous_composition() {
+        install_annotations();
+        let mut compositor = Compositor::new();
+        let frame = source(64, 64);
+        assert!(compositor.last_painted().is_empty());
+
+        let layout = OverlayLayout::new(OverlayStyle::Plate)
+            .with_blocks(vec![OverlayBlock::new(Rect::new(8, 8, 32, 16), "text")]);
+        compositor.compose(&frame, &layout);
+        // The painted region covers the block plus whatever ink ran past it.
+        let painted = compositor.last_painted();
+        assert_eq!(painted.len(), 1);
+        assert!(painted[0].contains(8, 8));
+        assert!(painted[0].contains(39, 23));
+    }
+
+    #[test]
+    fn an_empty_layout_after_a_drawn_one_damages_the_drawn_region() {
+        install_annotations();
+        // The clear path: an empty overlay over what was drawn must damage exactly what has to
+        // be erased, so fail-open can hand it to the surface.
+        let mut compositor = Compositor::new();
+        let frame = source(64, 64);
+        let drawn = OverlayLayout::new(OverlayStyle::Plate)
+            .with_blocks(vec![OverlayBlock::new(Rect::new(8, 8, 32, 16), "text")]);
+        compositor.compose(&frame, &drawn);
+
+        let cleared = compositor.compose(&frame, &OverlayLayout::new(OverlayStyle::Plate));
+        // Clearing damages what the drawn pass painted: the block plus its ink overflow.
+        assert_eq!(cleared.damage.len(), 1);
+        assert!(cleared.damage[0].contains(8, 8));
+        assert!(cleared.damage[0].contains(39, 23));
+        assert_eq!(cleared.frame.pixel(10, 10), CLEAR);
+    }
+
+    #[test]
+    fn blocks_with_no_text_and_blocks_outside_the_frame_are_not_drawn() {
+        install_annotations();
+        let mut compositor = Compositor::new();
+        let frame = source(64, 64);
+        let layout = OverlayLayout::new(OverlayStyle::Seamless).with_blocks(vec![
+            OverlayBlock::new(Rect::new(8, 8, 32, 16), ""),
+            OverlayBlock::new(Rect::new(-40, -40, 16, 16), "away"),
+        ]);
+
+        let composition = compositor.compose(&frame, &layout);
+        assert!(
+            composition.frame.as_bytes().iter().all(|byte| *byte == 0),
+            "nothing was drawn",
+        );
+        assert!(compositor.last_painted().is_empty());
     }
 }

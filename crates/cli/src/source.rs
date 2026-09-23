@@ -27,8 +27,10 @@ impl TextSource for SceneTextSource {
         SourceKind::Ocr
     }
 
-    /// Reports the labels the scene shows on the current frame, then steps to the next one, so the
-    /// source stays in step with the capture source rendering the same scene.
+    /// Reports the labels the scene shows on the current frame. The harness steps to the next
+    /// one with [`TextSource::advance`], once per captured frame, so the source stays in step
+    /// with the capture no matter how many frames actually needed a read — a static frame
+    /// reuses the previous pass and never calls this at all.
     fn read(&mut self, request: &ReadRequest<'_>) -> Result<Vec<TextRun>, SourceError> {
         let runs: Vec<TextRun> = self
             .scene
@@ -36,7 +38,10 @@ impl TextSource for SceneTextSource {
             .into_iter()
             .map(|(bounds, text)| TextRun::new(text, bounds, SourceKind::Ocr, 1.0))
             .collect();
-        self.index += 1;
         Ok(within_regions(runs, request.regions))
+    }
+
+    fn advance(&mut self) {
+        self.index = (self.index + 1).min(self.scene.frames);
     }
 }

@@ -1,0 +1,48 @@
+[package]
+name = "lumen-shell"
+version = "1.0.1"
+edition = "2021"
+description = "Tauri host for the Lumen interface: tray, global shortcuts and the command surface"
+license = "Apache-2.0"
+publish = false
+
+# Deliberately not a workspace member: the workspace CI runs on Ubuntu without WebKit/GTK
+# system packages. The shell is checked by the `shell` job on windows-latest instead, and
+# desktop builds run `npm run tauri build` from `app/`.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lumen-capture = { path = "../../crates/capture" }
+lumen-core = { path = "../../crates/core" }
+lumen-ocr = { path = "../../crates/ocr" }
+lumen-overlay = { path = "../../crates/overlay" }
+lumen-render = { path = "../../crates/render" }
+ort = "=2.0.0-rc.13"
+tokenizers = { version = "0.21", default-features = false, features = ["fancy-regex"] }
+ureq = "2"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.58"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_WinRT",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+# Its own workspace root: without this, Cargo discovers the repository workspace above
+# and refuses to build a package that is neither a member nor excluded.
+[workspace]

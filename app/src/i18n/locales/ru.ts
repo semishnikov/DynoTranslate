@@ -2,7 +2,7 @@ import type { en } from "./en";
 
 /** Russian reference locale. Same keys as English; missing keys fall back. */
 export const ru: Record<keyof typeof en, string> = {
-  "app.name": "Lumen",
+  "app.name": "DynoTranslate",
   "app.tagline": "Перевод экрана",
   "app.version": "Версия 1.0.0",
   "app.offline": "Работает офлайн · без аккаунта",
@@ -15,8 +15,8 @@ export const ru: Record<keyof typeof en, string> = {
   "nav.skip": "Перейти к содержимому",
 
   "toast.regionSaved": "Область оверлея сохранена.",
-  "toast.profilesExported": "Профили выгружены в Documents/Lumen.",
-  "toast.upToDate": "Lumen обновлён.",
+  "toast.profilesExported": "Профили выгружены в Documents/DynoTranslate.",
+  "toast.upToDate": "DynoTranslate обновлён.",
   "toast.packInstalled": "Языковой пакет установлен.",
   "toast.packRemoved": "Языковой пакет удалён.",
   "toast.settingsReset": "Настройки восстановлены до рекомендуемых.",
@@ -24,7 +24,7 @@ export const ru: Record<keyof typeof en, string> = {
 
   "home.title": "Обзор",
   "home.blurb":
-    "Lumen следит за активным окном, читает текст на экране и рисует перевод на месте. Никакого чтения памяти игры и никакой инъекции кода.",
+    "DynoTranslate следит за активным окном, читает текст на экране и рисует перевод на месте. Никакого чтения памяти игры и никакой инъекции кода.",
   "home.power": "Перевод",
   "home.on": "Перевод включён",
   "home.off": "Перевод выключен",
@@ -60,7 +60,7 @@ export const ru: Record<keyof typeof en, string> = {
 
   "apps.title": "Приложения",
   "apps.blurb":
-    "Профили появляются сами, когда Lumen впервые видит приложение. Меняйте их, только если нужно отойти от общих настроек.",
+    "Профили появляются сами, когда DynoTranslate впервые видит приложение. Меняйте их, только если нужно отойти от общих настроек.",
   "apps.find": "Найти приложение",
   "apps.export": "Экспорт профилей",
   "apps.translate": "Переводить {name}",
@@ -68,7 +68,7 @@ export const ru: Record<keyof typeof en, string> = {
   "apps.target": "Целевой язык",
   "apps.empty": "Нет профиля по запросу «{query}». Запустите приложение — оно появится здесь.",
   "apps.antiCheat":
-    "{name} защищает игру. Lumen читает только картинку, которую уже показывает система, — в процесс игры ничего не внедряется.",
+    "{name} защищает игру. DynoTranslate читает только картинку, которую уже показывает система, — в процесс игры ничего не внедряется.",
 
   "packs.title": "Языки",
   "packs.blurb":
@@ -84,18 +84,18 @@ export const ru: Record<keyof typeof en, string> = {
   "settings.title": "Настройки",
   "settings.blurb": "Изменения применяются сразу. Здесь ничего не нужно подтверждать.",
   "settings.general": "Основные",
-  "settings.general.description": "Как Lumen ведёт себя в системе.",
+  "settings.general.description": "Как DynoTranslate ведёт себя в системе.",
   "settings.reset": "Сбросить к рекомендуемым",
   "settings.autostart": "Запускать с Windows",
-  "settings.autostart.hint": "Lumen стартует свёрнутым в область уведомлений.",
+  "settings.autostart.hint": "DynoTranslate стартует свёрнутым в область уведомлений.",
   "settings.pausePasswords": "Пауза в полях пароля",
   "settings.pausePasswords.hint": "Захват отключается для паролей, экрана входа и UAC.",
   "settings.offlineOnly": "Только офлайн",
   "settings.offlineOnly.hint": "Используются только локальные пакеты. Текст не покидает компьютер.",
   "settings.tray": "Область уведомлений",
-  "settings.tray.description": "Что делает значок в трее, пока Lumen работает в фоне.",
+  "settings.tray.description": "Что делает значок в трее, пока DynoTranslate работает в фоне.",
   "settings.tray.minimise": "Сворачивать в трей при закрытии",
-  "settings.tray.minimise.hint": "Окно закрывается, Lumen продолжает работу. Откройте его из трея.",
+  "settings.tray.minimise.hint": "Окно закрывается, DynoTranslate продолжает работу. Откройте его из трея.",
   "settings.tray.notify": "Уведомлять о завершении пакета",
   "settings.tray.notify.hint": "Всплывает уведомление, когда загрузка закончилась или не удалась.",
   "settings.tray.quickToggle": "Клик по трею переключает оверлей",
@@ -104,7 +104,7 @@ export const ru: Record<keyof typeof en, string> = {
   "settings.hotkeys.description": "Глобальные сочетания работают, пока фокус в игре.",
   "settings.hotkeys.enabled": "Включить глобальные клавиши",
   "settings.hotkeys.enabled.hint": "Alt+T — оверлей; Alt+Q удерживать — исходный текст.",
-  "settings.hotkeys.list": "Alt+T оверлей · Alt+Q оригинал · Alt+Shift+O открыть Lumen",
+  "settings.hotkeys.list": "Alt+T оверлей · Alt+Q оригинал · Alt+Shift+O открыть DynoTranslate",
   "settings.appearance": "Внешний вид",
   "settings.appearance.description": "Как выглядят оверлей и само приложение.",
   "settings.theme": "Тема",
@@ -118,7 +118,7 @@ export const ru: Record<keyof typeof en, string> = {
   "settings.uiScale": "Масштаб интерфейса",
   "settings.animationOff": "Выкл.",
   "settings.performance": "Производительность",
-  "settings.performance.description": "Lumen уступает ресурсы, когда игре нужен железо.",
+  "settings.performance.description": "DynoTranslate уступает ресурсы, когда игре нужен железо.",
   "settings.resourceCap": "Лимит ресурсов",
   "settings.resource.light": "Лёгкий",
   "settings.resource.balanced": "Сбалансированный",
@@ -128,10 +128,19 @@ export const ru: Record<keyof typeof en, string> = {
   "settings.about": "О программе",
   "settings.about.meta": "Офлайн-движок перевода · пакеты 2026.03",
   "settings.about.check": "Проверить обновления",
+  "settings.about.checking": "Проверка…",
+  "settings.about.available": "Доступна версия {version}.",
+  "settings.about.download": "Скачать и установить",
+  "settings.about.downloading": "Скачивание… {progress}",
+  "settings.about.ready": "Обновление установлено. Перезапустите приложение.",
+  "settings.about.restart": "Перезапустить",
+  "settings.about.failed": "Ошибка обновления: {error}",
+  "settings.about.retry": "Повторить",
+  "settings.about.unavailable": "Обновления доступны в десктопном приложении.",
 
   "region.title": "Область",
   "region.blurb":
-    "Область окна, за которой следит Lumen. Всё вне её игнорируется — меньше нагрузка и поля паролей остаются за кадром.",
+    "Область окна, за которой следит DynoTranslate. Всё вне её игнорируется — меньше нагрузка и поля паролей остаются за кадром.",
   "region.editor": "Редактор области оверлея",
   "region.hint": "Тяните маркеры или стрелками после фокуса на области.",
   "region.x": "Слева",
@@ -150,7 +159,7 @@ export const ru: Record<keyof typeof en, string> = {
   "onboarding.back": "Назад",
   "onboarding.finish": "Завершить",
   "onboarding.step": "Шаг {current} из {total}",
-  "onboarding.welcome.title": "Добро пожаловать в Lumen",
+  "onboarding.welcome.title": "Добро пожаловать в DynoTranslate",
   "onboarding.welcome.body":
     "За минуту вы выберете язык, установите пакет и укажете, какую часть окна смотреть. Ничего не уходит в сеть, пока вы это не включите.",
   "onboarding.welcome.point1": "Читает только то, что уже на экране — без памяти и инъекций.",
@@ -168,8 +177,8 @@ export const ru: Record<keyof typeof en, string> = {
   "onboarding.region.custom": "Своя область",
   "onboarding.done.title": "Всё готово",
   "onboarding.done.body":
-    "Alt+T переключает оверлей. Удерживайте Alt+Q, чтобы увидеть оригинал. Lumen всегда можно открыть из трея.",
+    "Alt+T переключает оверлей. Удерживайте Alt+Q, чтобы увидеть оригинал. DynoTranslate всегда можно открыть из трея.",
 
   "hotkey.hint": "Alt+T оверлей · Alt+Q оригинал · Alt+Shift+O открыть",
-  "hotkey.toggleUnavailable": "Глобальные клавиши нужны в настольной оболочке; откройте Lumen из трея.",
+  "hotkey.toggleUnavailable": "Глобальные клавиши нужны в настольной оболочке; откройте DynoTranslate из трея.",
 };

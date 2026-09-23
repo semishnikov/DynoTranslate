@@ -386,6 +386,32 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_string_protects_to_nothing() {
+        let (masked, tokens) = protect("   ", &[]);
+        assert_eq!(masked, "");
+        assert!(tokens.is_empty());
+        assert_eq!(restore("осталось", &tokens), "осталось");
+    }
+
+    #[test]
+    fn a_literal_wins_the_span_a_number_inside_it_would_have_taken() {
+        let (masked, tokens) = protect("build 1.2.3 now", &["1.2.3"]);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind, TokenKind::Literal);
+        assert_eq!(tokens[0].original, "1.2.3");
+        assert_eq!(masked, "build __T0__ now");
+    }
+
+    #[test]
+    fn a_sentinel_the_engine_dropped_is_not_invented() {
+        let (_masked, tokens) = protect("Save 42", &[]);
+        assert_eq!(tokens[0].original, "42");
+        let restored = restore("Сохранить", &tokens);
+        assert_eq!(restored, "Сохранить");
+        assert!(!restored.contains("42"));
+    }
+
+    #[test]
     fn protects_explicit_do_not_translate_literals() {
         let (_masked, tokens) = protect("Visit DynoTranslate at https://example.com", &["DynoTranslate"]);
         assert_eq!(tokens.len(), 2);

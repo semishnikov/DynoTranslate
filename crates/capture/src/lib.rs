@@ -10,6 +10,9 @@ pub mod synthetic;
 #[cfg(windows)]
 pub mod windows;
 
+#[cfg(windows)]
+pub use windows::{capture_window_picture, capture_window_screen, enumerate_targets, DesktopCopySource};
+
 #[derive(Debug, thiserror::Error)]
 pub enum CaptureError {
     #[error("the target window is gone")]

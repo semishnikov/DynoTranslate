@@ -37,7 +37,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace --all-targets
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --all-targets 2>&1 | tee test-step.txt
 
       - name: Run the headless pipeline
         run: cargo run --release --bin lumen-pipeline -- --scene menu --out-dir pipeline-out
@@ -69,6 +72,111 @@ jobs:
           fi
           sed -n '1,40p' diag.txt | while IFS= read -r line; do
             printf '::error title=clippy::%s\n' "${line//'%'/'%25'}"
+          done
+          test_needed=1
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ -s fmt.txt ]; then
+            test_needed=0
+          fi
+          if grep -qE "(^|: )(error|warning)" clippy.txt; then
+            test_needed=0
+          fi
+          if [ "$test_needed" = "1" ]; then
+            if [ -s test-step.txt ]; then
+              cp test-step.txt test.txt
+            else
+              cargo test --workspace --all-targets > test.txt 2>&1
+            fi
+            sed 's/\x1b\[[0-9;]*m//g' test.txt > testclean.txt
+            { grep -E "^test result: FAILED" testclean.txt; grep -E "^error" testclean.txt; grep -E "^    [a-zA-Z0-9_:]+$" testclean.txt; grep -E "FAILED$" testclean.txt; echo "--- tail ---"; tail -n 30 testclean.txt; } > testdiag.txt
+            sed -n '1,40p' testdiag.txt | while IFS= read -r line; do
+              printf '::error title=test-diag::%s\n' "${line//'%'/'%25'}"
+            done
+            bt_needed=0
+            if grep -qE "^error: test failed" testclean.txt; then
+              if ! grep -qE "^    [a-zA-Z0-9_:]+$" testclean.txt; then
+                bt_needed=1
+              fi
+            fi
+            if [ "$bt_needed" = "1" ]; then
+              RUST_BACKTRACE=1 cargo test --workspace --all-targets > bt.txt 2>&1
+              sed 's/\x1b\[[0-9;]*m//g' bt.txt > btclean.txt
+              { grep -B2 -A30 "overflowed" btclean.txt; grep -B3 -A10 "^error: test failed" btclean.txt; echo "--- tail ---"; tail -n 15 btclean.txt; } > btdiag.txt
+              sed -n '1,40p' btdiag.txt | while IFS= read -r line; do
+                printf '::error title=backtrace::%s\n' "${line//'%'/'%25'}"
+              done
+            fi
+            if [ ! -s testdiag.txt ]; then
+              if ! cargo run --release --bin lumen-pipeline -- --scene menu --out-dir pipeline-out > pipeline.txt 2>&1; then
+                { grep -E "^error" pipeline.txt; tail -n 5 pipeline.txt; } > pipediag.txt
+                sed -n '1,40p' pipediag.txt | while IFS= read -r line; do
+                  printf '::error title=pipeline-diag::%s\n' "${line//'%'/'%25'}"
+                done
+              fi
+            fi
+          fi
+
+  shell:
+    name: Shell (windows-latest)
+    runs-on: windows-latest
+    # The shell is not a workspace member (Ubuntu CI has no WebKit/GTK), so it gets its
+    # own job on the platform it ships on, where WebView2 needs no system packages.
+    # The frontend builds first: the Tauri build script embeds frontendDist at compile
+    # time and fails without it.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install the toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install the frontend
+        working-directory: app
+        run: npm ci
+
+      - name: Build the frontend
+        working-directory: app
+        run: npm run build
+
+      - name: Check formatting
+        working-directory: app/src-tauri
+        run: cargo fmt --check
+
+      - name: Lint
+        working-directory: app/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check
+        working-directory: app/src-tauri
+        run: cargo check --all-targets
+
+      - name: Report what failed
+        if: failure()
+        working-directory: app/src-tauri
+        run: |
+          set +e
+          cargo fmt --check > shell-fmt.txt 2>&1
+          sed -n '1,40p' shell-fmt.txt | while IFS= read -r line; do
+            printf '::error title=shell-fmt::%s\n' "${line//'%'/'%25'}"
+          done
+          cargo clippy --all-targets --message-format short -- -D warnings > shell-clippy.txt 2>&1
+          grep -iE "(^|: )(error|warning)" shell-clippy.txt > shell-diag.txt
+          if [ ! -s shell-diag.txt ]; then
+            tail -n 30 shell-clippy.txt > shell-diag.txt
+          fi
+          sed -n '1,40p' shell-diag.txt | while IFS= read -r line; do
+            printf '::error title=shell-clippy::%s\n' "${line//'%'/'%25'}"
           done
 
   web:

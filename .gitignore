@@ -4,3 +4,5 @@ target/
 *.local
 .DS_Store
 pipeline-out/
+app/src-tauri/resources/
+app/src-tauri/webview2/

@@ -8,6 +8,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Done
 
+- **M5.** Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n and the
+  accessibility audit. Merged as PR #10; `main` is at `6b5705b`.
 - **M4.** Portable renderer (fitting, inpainting, bundled faces), temporal stability, stroke-weight
   estimation, RTL/vertical writing modes, visual regression suite, ADR 0006, and the pipeline
   wired through stability + stub translation. Green on all three jobs (CI run 35728755276) and
@@ -128,11 +130,90 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
 
+## Done: M6 branch (performance, soak and chaos, edge cases)
+
+On branch `arena/01a0c968-dynotranslate` (PR #12), continued after the previous session hit its
+limit. Green on all three jobs (CI run 35746341895) and marked ready for review.
+
+What the continuation session did, oldest first:
+
+- Borrow-check fix (`merged.clone()`), then the formatting backlog the annotation cap hid
+  behind earlier diffs: all multi-argument calls over the 72-character cap broken one per line
+  with trailing commas, overlong chains and struct literals restructured.
+- Lint round: the static-skip check binds the previous pass with `if let` (tuple form, MSRV is
+  still 1.77, so no let-chains), the driven-scene tuple has an alias, test-only runner
+  instrumentation is `cfg(test)`, and the never-read source counters are gone.
+- Two compositor damage tests asserted the block rect exactly; paint covers the block plus its
+  ink overflow by design, so they now assert one region covering the block corners, like the
+  neighbouring damage tests.
+- CI failure reporting: every cli test binary installs the `test-panic` hook, the Test step tees
+  its output, and the failure reporter restates failed binaries/tests plus the release-run tail.
+- The budgets test compared a skipped frame against exact detection parity (missed by 7 µs on
+  a shared agent) and capped a changed pass at 500 ms (cold font work alone costs two seconds
+  in an unoptimized build). The relative ceiling is now twice the worst detection, the absolute
+  one five seconds, with the rationale in the comment.
+- The counting allocator delegates to `System` explicitly.
+- Formatting rules proven against green code this session: call/macro arguments stay whole up
+  to exactly 72 characters (inclusive) and break above it; a single argument uses the full
+  width; `fn` signatures join while the whole line fits 120; match-arm tuples stay vertical.
+
+The updater and installer joined the same branch. `src-tauri/` moved under `app/` (standard
+Tauri layout, so `frontendDist` resolves); the icon set is generated from a placeholder
+`icon-source.png` and committed; `release.yml` builds the MSI/NSIS installers on pull requests
+and `main` and turns `v*` tags into signed draft releases; the `shell` job checks the Tauri
+crate on `windows-latest`. The updater reads releases from this repository with a read-only
+token baked into the binary (owner choice over a public mirror or a public repo); the signing
+keypair was generated in-session, the public half is committed in `tauri.conf.json`, the private
+half travels to the owner in chat only. The Settings About card checks, downloads, installs and
+relaunches through a new updater store, verified locally with `tsc`, `vite build` and `oxlint`.
+
+## In progress: installer fix and the edge-case pass
+
+Continued on `arena/01a0ca15-dynotranslate`, branched from `19219f9`, because that session's
+branch cannot be pushed to from here. This supersedes PR #12 the way #12 superseded #11.
+
+What was verified on `19219f9` (CI run 35757463931): Interface, Shell, Rust ubuntu and Rust
+windows are green. The bundle job (run 35757463866) failed after 16 minutes. Its annotations
+were the tail of `tauri info`, not the build error: GitHub keeps about ten error annotations
+per step, and the reporter emitted `tauri info` first, so the error never left the runner.
+`gh run view --log` still dies with `EOF` on the log host.
+
+The ephemeral key was exported as `TAURI_SIGNING_PRIVATE_KEY_PATH`. `tauri build` does not
+read that variable ([tauri#15028](https://github.com/tauri-apps/tauri/issues/15028)); it reads
+`TAURI_SIGNING_PRIVATE_KEY` as key contents or as a path. The workflow now sets that name.
+Run 35760746298 confirmed the Windows process can open the file. Run 35763072186 then
+named the real failure, from the log tail: MSI and NSIS both finished, and signing aborted
+with `failed to decode pubkey … Invalid input length: 57`. The committed value was the raw
+minisign line, not the base64 public-key box `tauri signer generate` writes. Nothing has
+shipped, so the key was rotated rather than repaired: public id `AF238AC5BE2A0E3C` is in
+`tauri.conf.json`, and the private half is in the session chat, not the repository. The
+previous chat handoff does not match this key and must not be stored. Pull-request builds
+sign with an ephemeral pair and pass its public half via `--config`.
+
+Release run 35765741805 at `9c187b6` is green: `Build the installer` and `Upload the
+installer` both succeeded. The artifact is `installer-windows`, 7,886,330 bytes. It was not
+opened here — `gh run download` dies with `EOF` on the artifact host, the same way the log
+host does — so the file names inside the zip were not read back. The upload step's paths are
+the MSI and the NSIS setup. CI run 35765741916 on the same commit is green on Interface,
+Shell, Rust ubuntu and Rust windows. A later docs-only commit does not re-run the bundle
+job; this run is the proof.
+
+CI run 35760746307 is green on Interface, Shell, Rust ubuntu and Rust windows. That run
+includes the edge-case pass: merge drops empty and zero-area runs, stability does not queue
+blank text, and the new tests (1×1 frame, padded strides, sub-tile remainder, zero-height
+line, one-pixel block, empty fit, token overlap, translation-memory floor, breaker
+reopening from half-open) passed on both platforms. A one-pixel block classifies as a label,
+not a button; the first assertion said otherwise and was corrected before that run.
+
 ## Next
 
-1. **Land M5** (PR #10): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
-   i18n and the accessibility audit. Interface + both Rust jobs green on CI run 35731085910;
-   PR marked ready for review.
+1. **Build the real loop**, as written in `docs/DELIVERY.md`. The owner asked for an
+   application that translates a live screen, and said they will not store secrets, create
+   tokens, or rehearse tags in order to see it. The installer in draft PR #13 packages a
+   shell. It does not translate. Do not open M7. Do not add another stand-in. The next
+   change is Windows capture, Windows OCR, a real English-to-Russian model, and the overlay,
+   in one installer the owner only has to download. Pull requests #11 and #12 stay closed
+   to merging. The signing key and `UPDATER_PAT` wait until a public update exists.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
@@ -144,16 +225,18 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
    engine is passed to `gate::score_recognition` in the double's place and nothing else changes.
    The corpus font's remaining scripts (Greek, Han, kana, hangul, Arabic, Hebrew, Thai,
    Devanagari) join as skeleton additions when the languages that need them do.
-5. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-6. Text effects beyond weight (outline detection from the source pixels), which layout still
+5. Text effects beyond weight (outline detection from the source pixels), which layout still
    leaves alone.
-7. M6: Performance tuning, edge cases, chaos and soak runs, updater, installer.
-8. M7: Release: signed installer, winget manifest, QA report, manual test plan.
+6. M7: Release: signed installer, winget manifest, QA report, manual test plan. The shell
+   still keeps settings in memory only; the architecture's versioned settings file is not
+   wired, and the interface does not call the shell commands yet. That is the first gap after
+   M6 lands, not a reason to hold the installer.
 
 ## Known limitations
 
-- The harness reads the whole frame on every pass, so text that stopped moving is not forgotten.
-  Skipping work on unchanged tiles needs the previous pass to be reusable, which is still open.
+- A static frame skips everything past change detection. A changed frame re-reads only the
+  changed regions and keeps the previous pass's runs for the rest. A lost target clears the
+  overlay and forces a full re-read on the next pass.
 - Recognition of a plain PNG is still the region stand-in; no engine reads an image yet.
 - Language identification is orthography, not a trained classifier. It is exact for the script and
   for languages with letters of their own, and a leaning for the rest. Replacing the scoring with a
@@ -179,5 +262,8 @@ corpus gate; PRs #4 and #6 will be closed when it merges.
 - A product name. The code says Lumen, the repository says DynoTranslate, and "Lumen" alongside
   translation is widely used by unrelated projects. Three candidates have to be checked against
   GitHub, winget and the Microsoft Store.
-- A code-signing certificate before M6; not a blocker until then.
+- A Windows Authenticode certificate before the signed installer in M7. The updater minisign
+  key is a different key. Its public id is `AF238AC5BE2A0E3C`; the private half from this
+  session's chat is what `TAURI_SIGNING_PRIVATE_KEY` must hold. The earlier handoff does not
+  match and must not be stored.
 

@@ -194,6 +194,16 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_term_is_ignored_and_does_not_bump_the_version() {
+        let mut glossary = Glossary::new("app");
+        glossary.add("   ", "что-то", false);
+        assert!(glossary.is_empty());
+        assert_eq!(glossary.version, 1);
+        assert!(!glossary.remove("   "));
+        assert_eq!(glossary.version, 1);
+    }
+
+    #[test]
     fn version_increments_on_mutation() {
         let mut glossary = Glossary::new("app");
         assert_eq!(glossary.version, 1);

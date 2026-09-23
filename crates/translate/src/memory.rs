@@ -180,6 +180,53 @@ mod tests {
     }
 
     #[test]
+    fn whitespace_differences_share_one_key() {
+        let mut memory = TranslationMemory::new(32);
+        let spaced = MemoryKey::new("  New   Game  ", Language::English, Language::Russian, 1);
+        let tight = MemoryKey::new("New Game", Language::English, Language::Russian, 1);
+        memory.insert(spaced, "Новая игра", "offline", 1.0);
+        assert_eq!(memory.get(&tight).unwrap().translation, "Новая игра");
+        assert_eq!(memory.len(), 1);
+    }
+
+    #[test]
+    fn updating_an_existing_entry_does_not_insert_or_evict() {
+        let mut memory = TranslationMemory::new(16);
+        let key = MemoryKey::new("Quit", Language::English, Language::Russian, 1);
+        memory.insert(key.clone(), "Выход", "offline", 0.5);
+        memory.insert(key.clone(), "Закрыть", "manual", 1.0);
+        assert_eq!(memory.len(), 1);
+        assert_eq!(memory.stats().inserts, 1);
+        assert_eq!(memory.stats().evictions, 0);
+        assert_eq!(memory.get(&key).unwrap().translation, "Закрыть");
+        assert_eq!(memory.get(&key).unwrap().engine, "manual");
+    }
+
+    #[test]
+    fn a_requested_capacity_below_sixteen_is_clamped() {
+        let mut memory = TranslationMemory::new(1);
+        for i in 0..16 {
+            let key = MemoryKey::new(&format!("k{i}"), Language::English, Language::Russian, 1);
+            memory.insert(key, "t", "stub", 1.0);
+        }
+        assert_eq!(memory.len(), 16);
+        assert_eq!(memory.stats().evictions, 0);
+    }
+
+    #[test]
+    fn clear_drops_entries_and_keeps_the_counters() {
+        let mut memory = TranslationMemory::new(32);
+        let key = MemoryKey::new("Map", Language::English, Language::Russian, 1);
+        memory.insert(key.clone(), "Карта", "offline", 1.0);
+        assert!(memory.get(&key).is_some());
+        memory.clear();
+        assert!(memory.is_empty());
+        assert_eq!(memory.stats().inserts, 1);
+        assert_eq!(memory.stats().hits, 1);
+        assert!(memory.get(&key).is_none());
+    }
+
+    #[test]
     fn glossary_version_change_isolates_stale_cache() {
         let mut memory = TranslationMemory::new(100);
         let key_v1 = MemoryKey::new("Potion", Language::English, Language::Russian, 1);
