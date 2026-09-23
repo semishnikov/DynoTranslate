@@ -25,7 +25,7 @@ pub struct OverlayBlock {
     /// Recognition confidence in 0..=1. Low-confidence blocks fall back to a plate because erasing
     /// text that was read badly is worse than covering it.
     pub confidence: f32,
-    /// Glyph height the layout measured. Fitting starts here and never drops below 80 % of it.
+    /// Glyph height the layout measured. Fitting starts here and never drops below 60 % of it.
     pub font_size: u32,
     pub weight: FontWeight,
     pub italic: bool,

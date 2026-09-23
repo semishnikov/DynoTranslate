@@ -10,6 +10,7 @@ type LiveStatus = {
   watched: string;
   capture: string;
   sample: string;
+  log_path: string;
   paused: boolean;
   translated: number;
 };
@@ -28,6 +29,7 @@ const STARTING: LiveStatus = {
   watched: "",
   capture: "",
   sample: "",
+  log_path: "",
   paused: false,
   translated: 0,
 };
@@ -227,6 +229,12 @@ export default function App() {
         Нажмите нужное окно в списке. Его не обязательно выводить вперёд. Сейчас перевожу английский на русский.
         Язык выбирать не нужно. Игру лучше держать обычным окном, не на весь экран.
       </p>
+      {shown.log_path ? (
+        <p className="limit">
+          Журнал этапов: {shown.log_path}
+          . Если перевод ошибается, пришлите этот файл — в нём каждый шаг с временем.
+        </p>
+      ) : null}
     </main>
   );
 }

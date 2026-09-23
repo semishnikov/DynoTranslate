@@ -26,9 +26,10 @@ const MAX_OCR_WIDTH: u32 = 1280;
 /// Translations stream in a few per tick instead of one long blocking batch, so the first
 /// plates land about a second after the screen changes and the loop stays responsive.
 const NEW_LINES_PER_TICK: usize = 3;
-/// Stylised lettering reads as garbage well below this confidence; translating it only paints
-/// transliterated noise over the art, so low-confidence reads stay untranslated.
-const MIN_READ_CONFIDENCE: f32 = 0.72;
+/// A bubble whose mean read confidence is below this is a detector hallucination, not text.
+/// The bar is deliberately low — coverage matters, and garbage is filtered by word shape, not
+/// by a confidence number the model reports optimistically anyway.
+const MIN_BUBBLE_CONFIDENCE: f32 = 0.45;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -38,6 +39,8 @@ pub struct LiveStatus {
     pub watched: String,
     pub capture: String,
     pub sample: String,
+    /// Where the stage-by-stage journal lives, so the owner can attach it to a bug report.
+    pub log_path: String,
     pub paused: bool,
     pub translated: u32,
 }
@@ -286,6 +289,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
     let mut held = String::new();
     let mut last_preview = Instant::now() - Duration::from_secs(2);
     let mut last_log = String::new();
+    let mut last_scene_key = String::new();
 
     loop {
         pump(&control, &app);
@@ -367,6 +371,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             }
 
             let (small, scale) = downscale(&frame);
+            let ocr_started = Instant::now();
             let lines = match reader.read(&small) {
                 Ok(lines) => lines,
                 Err(error) => {
@@ -403,6 +408,43 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             let mut bubbles = group_bubbles(&lines);
             bubbles
                 .sort_by_key(|bubble| std::cmp::Reverse(u64::from(bubble.rect.width) * u64::from(bubble.rect.height)));
+
+            // The journal dumps every stage when the reading changes and stays quiet while the
+            // same text is on screen, so the file the owner sends back is readable.
+            let scene_key = bubbles
+                .iter()
+                .map(|bubble| bubble.text.as_str())
+                .collect::<Vec<_>>()
+                .join("|");
+            let dump = scene_key != last_scene_key;
+            if dump {
+                last_scene_key = scene_key;
+                let _ = writeln!(
+                    log_file,
+                    "{} tick window={:?} frame={}x{} ocr={}ms lines={} bubbles={}",
+                    stamp(),
+                    name,
+                    frame.width(),
+                    frame.height(),
+                    ocr_started.elapsed().as_millis(),
+                    lines.len(),
+                    bubbles.len()
+                );
+                for line in &lines {
+                    let b = line.bounds;
+                    let _ = writeln!(
+                        log_file,
+                        "{}   line conf={:.2} rect=({},{},{}x{}) text={:?}",
+                        stamp(),
+                        line.confidence,
+                        b.x,
+                        b.y,
+                        b.width,
+                        b.height,
+                        line.text
+                    );
+                }
+            }
             for bubble in bubbles {
                 let source = bubble.text.trim();
                 if source.chars().all(|ch| !ch.is_alphabetic()) {
@@ -412,16 +454,58 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     // Window chrome of a Russian system — titles, menus, status lines — is
                     // already in the target language; translating it only draws garbage over
                     // text the user can read.
+                    if dump {
+                        let _ = writeln!(
+                            log_file,
+                            "{} skip reason=russian conf={:.2} text={:?}",
+                            stamp(),
+                            bubble.avg_conf,
+                            source
+                        );
+                    }
                     saw_cyrillic = true;
                     continue;
                 }
                 if !looks_like_words(source) {
                     // Recognition noise from borders and icons has no vowel-bearing words;
                     // never translate or cover something that is not really text.
+                    if dump {
+                        let _ = writeln!(
+                            log_file,
+                            "{} skip reason=noise conf={:.2} text={:?}",
+                            stamp(),
+                            bubble.avg_conf,
+                            source
+                        );
+                    }
                     continue;
                 }
-                if bubble.confidence < MIN_READ_CONFIDENCE {
+                if bubble.avg_conf < MIN_BUBBLE_CONFIDENCE {
+                    if dump {
+                        let _ = writeln!(
+                            log_file,
+                            "{} skip reason=lowconf conf={:.2} text={:?}",
+                            stamp(),
+                            bubble.avg_conf,
+                            source
+                        );
+                    }
                     saw_latin = true;
+                    continue;
+                }
+                if !english_like(source) {
+                    // Stylised lettering reads as non-words ("fwe'beaveyeu"); translating that
+                    // only prints the model's guess over the art.
+                    if dump {
+                        let _ = writeln!(
+                            log_file,
+                            "{} skip reason=not-english conf={:.2} text={:?}",
+                            stamp(),
+                            bubble.avg_conf,
+                            source
+                        );
+                    }
+                    cache.insert(clip(source, 180), String::new());
                     continue;
                 }
                 match script_of(source) {
@@ -440,27 +524,52 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 let translated = match cache.get(&key) {
                     // An empty entry is a remembered rejection: a misread we will never cover.
                     Some(cached) if cached.is_empty() => continue,
-                    Some(cached) => cached.clone(),
+                    Some(cached) => {
+                        if dump {
+                            let _ = writeln!(log_file, "{} reuse cached {:?} -> {:?}", stamp(), key, cached);
+                        }
+                        cached.clone()
+                    }
                     None if fresh >= NEW_LINES_PER_TICK => {
                         pending = true;
+                        if dump {
+                            let _ = writeln!(log_file, "{} queued for next tick {:?}", stamp(), key);
+                        }
                         continue;
                     }
                     None => {
                         fresh += 1;
+                        let started = Instant::now();
                         match translate_fully(&mut translator, &key) {
                             Ok(text) if has_cyrillic(&text) && plausible_russian(&text) => {
+                                let _ = writeln!(
+                                    log_file,
+                                    "{} translate fresh ms={} {:?} -> {:?}",
+                                    stamp(),
+                                    started.elapsed().as_millis(),
+                                    key,
+                                    text
+                                );
                                 cache.insert(key.clone(), text.clone());
                                 control.inner.translated.fetch_add(1, Ordering::SeqCst);
                                 text
                             }
-                            Ok(_) => {
+                            Ok(text) => {
                                 // Garbage in, garbage out — remember the verdict so a stuck
                                 // misread never burns the per-tick translation budget again.
+                                let _ = writeln!(
+                                    log_file,
+                                    "{} reject target ms={} {:?} -> {:?}",
+                                    stamp(),
+                                    started.elapsed().as_millis(),
+                                    key,
+                                    text
+                                );
                                 cache.insert(key.clone(), String::new());
                                 continue;
                             }
                             Err(error) => {
-                                log_once(&mut log_file, &mut last_log, &format!("translate: {error}"));
+                                let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
                                 continue;
                             }
                         }
@@ -482,6 +591,26 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 }
                 let size = (bubble.line_height as f32 * scale * 0.72).clamp(12.0, 42.0) as u32;
                 let (background, foreground) = plate_colors(&frame, &rect);
+                if dump {
+                    let b = rect;
+                    let _ = writeln!(
+                        log_file,
+                        "{} plate rect=({},{},{}x{}) font={} bg=[{},{},{}] fg=[{},{},{}] text={:?}",
+                        stamp(),
+                        b.x,
+                        b.y,
+                        b.width,
+                        b.height,
+                        size,
+                        background[0],
+                        background[1],
+                        background[2],
+                        foreground[0],
+                        foreground[1],
+                        foreground[2],
+                        translated
+                    );
+                }
                 blocks.push(
                     OverlayBlock::new(rect, translated)
                         .with_font(size, FontWeight::Regular, false)
@@ -529,6 +658,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                 std::thread::sleep(Duration::from_millis(160));
                 continue;
             };
+            let present_started = Instant::now();
             let composition = compositor.compose(&frame, &layout);
             if let Err(error) = show_on(&mut overlay, bounds, &composition.frame, &composition.damage) {
                 log_once(&mut log_file, &mut last_log, &format!("present: {error}"));
@@ -554,6 +684,15 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             status.capture = method.to_owned();
             status.sample = sample.clone();
             publish(&control, &app, status);
+            if dump {
+                let _ = writeln!(
+                    log_file,
+                    "{} present ok blocks={} ms={}",
+                    stamp(),
+                    layout.blocks.len(),
+                    present_started.elapsed().as_millis()
+                );
+            }
             held = sample;
             if !pending {
                 last_sig = sig.clone();
@@ -624,6 +763,7 @@ fn view(phase: &str, title: &str, detail: &str) -> LiveStatus {
         watched: String::new(),
         capture: String::new(),
         sample: String::new(),
+        log_path: log_file_path().to_string_lossy().into_owned(),
         paused: false,
         translated: 0,
     }
@@ -987,7 +1127,10 @@ fn picture_same(left: &[u8], right: &[u8]) -> bool {
 struct Bubble {
     rect: Rect,
     text: String,
+    /// Weakest line: drives the compositor's plate fallback.
     confidence: f32,
+    /// Mean line confidence: drives the low-confidence skip.
+    avg_conf: f32,
     /// Height of one source line; the translation is typeset at this size, not the bubble's.
     line_height: u32,
 }
@@ -995,28 +1138,49 @@ struct Bubble {
 /// Rows that stack in one column with a small gap belong to the same bubble, so the translator
 /// gets whole sentences and the overlay draws one plate per bubble instead of one per row.
 fn group_bubbles(lines: &[lumen_ocr::Recognition]) -> Vec<Bubble> {
+    struct Draft {
+        rect: Rect,
+        text: String,
+        confidence: f32,
+        conf_sum: f32,
+        line_count: u32,
+        line_height: u32,
+    }
     let mut order: Vec<&lumen_ocr::Recognition> = lines.iter().collect();
     order.sort_by_key(|line| line.bounds.y);
-    let mut bubbles: Vec<Bubble> = Vec::new();
+    let mut drafts: Vec<Draft> = Vec::new();
     for line in order {
         let bounds = line.bounds;
-        let joined = bubbles.iter_mut().rev().find(|bubble| same_block(bubble.rect, bounds));
-        if let Some(bubble) = joined {
-            bubble.rect = bubble.rect.union(&bounds);
-            bubble.text.push(' ');
-            bubble.text.push_str(line.text.trim());
-            bubble.confidence = bubble.confidence.min(line.confidence);
-            bubble.line_height = bubble.line_height.max(bounds.height);
+        let joined = drafts.iter_mut().rev().find(|draft| same_block(draft.rect, bounds));
+        if let Some(draft) = joined {
+            draft.rect = draft.rect.union(&bounds);
+            draft.text.push(' ');
+            draft.text.push_str(line.text.trim());
+            draft.confidence = draft.confidence.min(line.confidence);
+            draft.conf_sum += line.confidence;
+            draft.line_count += 1;
+            draft.line_height = draft.line_height.max(bounds.height);
         } else {
-            bubbles.push(Bubble {
+            drafts.push(Draft {
                 rect: bounds,
                 text: line.text.trim().to_owned(),
                 confidence: line.confidence,
+                conf_sum: line.confidence,
+                line_count: 1,
                 line_height: bounds.height.max(1),
             });
         }
     }
-    bubbles
+    drafts
+        .into_iter()
+        .map(|draft| Bubble {
+            rect: draft.rect,
+            text: draft.text,
+            confidence: draft.confidence,
+            avg_conf: draft.conf_sum / draft.line_count.max(1) as f32,
+            line_height: draft.line_height,
+        })
+        .collect()
 }
 
 fn same_block(upper: Rect, lower: Rect) -> bool {
@@ -1130,6 +1294,127 @@ fn plausible_russian(text: &str) -> bool {
     }
     // Long all-caps strings: stylised lettering transliterates into shouting gibberish.
     !(total >= 12 && lower == 0)
+}
+
+/// Clock prefix for journal lines, so the owner's report shows when each stage happened.
+fn stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    format!("{:02}:{:02}:{:02}", secs / 3600 % 24, secs / 60 % 60, secs % 60)
+}
+
+/// Contractions are the only English words that carry an apostrophe; anything else with one
+/// ("fwe'beaveyeu") is a misread of stylised lettering, not a sentence.
+const CONTRACTIONS: &[&str] = &[
+    "i'm",
+    "you're",
+    "he's",
+    "she's",
+    "it's",
+    "we're",
+    "they're",
+    "i've",
+    "you've",
+    "we've",
+    "they've",
+    "i'll",
+    "you'll",
+    "he'll",
+    "she'll",
+    "we'll",
+    "they'll",
+    "i'd",
+    "you'd",
+    "he'd",
+    "she'd",
+    "we'd",
+    "they'd",
+    "don't",
+    "doesn't",
+    "didn't",
+    "can't",
+    "couldn't",
+    "won't",
+    "wouldn't",
+    "shan't",
+    "shouldn't",
+    "isn't",
+    "aren't",
+    "wasn't",
+    "weren't",
+    "hasn't",
+    "haven't",
+    "hadn't",
+    "let's",
+    "that's",
+    "there's",
+    "here's",
+    "what's",
+    "who's",
+    "where's",
+    "when's",
+    "why's",
+    "how's",
+    "o'clock",
+    "ma'am",
+    "o'er",
+    "ne'er",
+    "'em",
+    "y'all",
+];
+
+/// Common English letter pairs, space separated so a two-letter lookup never spans a boundary.
+/// A lowercase word whose pairs are mostly absent from this list reads as noise, not English.
+const COMMON_PAIRS: &str = "th he in er an re on at en nd ti es or te of ed is it al ar st to \
+     nt ng se ha as ou io le ve co me de hi ri ro ic ne ea ra ce li ch ll be ma si om ur el la \
+     pe so no ct di pa ru sa ta ge ho wi lo po mo na mi mu ni ol pi pu sc sh sk sl sm sn sp su \
+     sw tr tu tw un us wa we wo ye yo ec qu ui il dr nk br cr fr gr pr vr wr cl fl gl pl bl ph \
+     wh gh ht ft lt mt pt rt ot ut et ak ck dg ee oo ff ss tt rr nn mm pp bb dd gg aa ii uu ov \
+     iv av ev ow aw ew";
+
+fn word_is_garbage(word: &str) -> bool {
+    let lower = word.to_lowercase();
+    if lower.contains('\'') && !CONTRACTIONS.contains(&lower.as_str()) {
+        return true;
+    }
+    // Names and sentence starts are capitalised; statistics only judge lowercase words.
+    if word.chars().next().map(char::is_uppercase).unwrap_or(true) {
+        return false;
+    }
+    let letters: Vec<char> = lower.chars().filter(|ch| ch.is_ascii_alphabetic()).collect();
+    if letters.len() < 5 {
+        return false;
+    }
+    let mut common = 0u32;
+    let mut total = 0u32;
+    for pair in letters.windows(2) {
+        total += 1;
+        if COMMON_PAIRS.contains(&format!("{}{}", pair[0], pair[1])) {
+            common += 1;
+        }
+    }
+    // A real English word keeps at least half of its pairs in the common list.
+    common * 2 < total
+}
+
+/// Whether the reading looks like English sentences rather than recognition noise. A bubble is
+/// rejected only when the judged words are mostly garbage, so one odd name does not kill it.
+fn english_like(text: &str) -> bool {
+    let mut judged = 0u32;
+    let mut garbage = 0u32;
+    for word in text.split(|ch: char| !ch.is_alphabetic() && ch != '\'') {
+        if word.chars().filter(|ch| ch.is_alphabetic()).count() < 3 {
+            continue;
+        }
+        judged += 1;
+        if word_is_garbage(word) {
+            garbage += 1;
+        }
+    }
+    // A lone garbage word sinks the bubble; one odd word inside a real sentence does not.
+    judged == 0 || garbage * 2 <= judged
 }
 
 /// A translation is usually a little longer than the original. Give the fitter a quarter more
@@ -1264,6 +1549,16 @@ mod tests {
             ("Right?", 400, 10, 80),
         ]));
         assert_eq!(apart.len(), 3);
+    }
+
+    #[test]
+    fn misread_stylised_lettering_is_not_english() {
+        use super::english_like;
+        assert!(!english_like("fwe'beaveyeu. !"));
+        assert!(english_like("When life gives you lemons, drink tequila"));
+        assert!(english_like("Hold on, Rick."));
+        assert!(english_like("I don't know what to do."));
+        assert!(english_like("Because we are together!"));
     }
 
     #[test]
@@ -1588,13 +1883,24 @@ fn write_saved(saved: &Saved) {
     }
 }
 
+fn log_file_path() -> PathBuf {
+    data_dir().join("live.log")
+}
+
 fn open_log() -> std::fs::File {
     let dir = data_dir();
     let _ = std::fs::create_dir_all(&dir);
+    let path = log_file_path();
+    // Keep the journal bounded: a previous run's tail is better than a 400 MB append-only file.
+    if std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0) > 4 * 1024 * 1024 {
+        let rotated = dir.join("live.log.prev");
+        let _ = std::fs::remove_file(&rotated);
+        let _ = std::fs::rename(&path, rotated);
+    }
     OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join("live.log"))
+        .open(path)
         .unwrap_or_else(|_| fallback_log())
 }
 
