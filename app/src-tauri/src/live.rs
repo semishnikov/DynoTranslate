@@ -26,6 +26,11 @@ const MAX_OCR_WIDTH: u32 = 1280;
 /// Lines translated per tick: eight keeps a video-paced screen draining its queue while a
 /// 30 ms recompose cadence streams the plates in instead of one long blocking batch.
 const NEW_LINES_PER_TICK: usize = 8;
+/// Reads below this confidence are the recogniser guessing at chrome, watermarks or stylised
+/// art. The journal prints every skip with its number, so the threshold stays honest: in the
+/// owner's log every garbage plate came from a read at 0.73 or below, every good translation
+/// from 0.84 and up.
+const MIN_LINE_CONFIDENCE: f32 = 0.75;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -457,6 +462,18 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     }
                     continue;
                 }
+                if line.confidence < MIN_LINE_CONFIDENCE {
+                    if dump {
+                        let _ = writeln!(
+                            log_file,
+                            "{} skip reason=lowconf conf={:.2} text={:?}",
+                            stamp(),
+                            line.confidence,
+                            source
+                        );
+                    }
+                    continue;
+                }
                 match script_of(source) {
                     Script::Other => {
                         saw_other = true;
@@ -510,9 +527,10 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     sample_score = score;
                     sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
                 }
+                // The plate is exactly the box the original occupies: detection already grows
+                // its boxes by a couple of pixels, so any extra padding or widening only made
+                // plates overlap their neighbours and stick out of the bubble.
                 let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
-                let rect = pad(rect, 2, frame.bounds());
-                let rect = widen(rect, frame.bounds());
                 if rect.height < 8 || rect.width < 8 {
                     continue;
                 }
@@ -1049,18 +1067,6 @@ fn picture_same(left: &[u8], right: &[u8]) -> bool {
     changed < 3
 }
 
-/// Grows the box a little so the plate fully covers the source glyphs, which detection boxes
-/// hug tightly.
-fn pad(rect: Rect, pixels: i32, bounds: Rect) -> Rect {
-    let grown = Rect::new(
-        rect.x - pixels,
-        rect.y - pixels,
-        rect.width + pixels as u32 * 2,
-        rect.height + pixels as u32 * 2,
-    );
-    grown.clamp_to(&bounds).unwrap_or(rect)
-}
-
 fn lum(pixel: [u8; 4]) -> u8 {
     ((u16::from(pixel[2]) * 77 + u16::from(pixel[1]) * 150 + u16::from(pixel[0]) * 29) / 256) as u8
 }
@@ -1131,18 +1137,6 @@ fn stamp() -> String {
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     format!("{:02}:{:02}:{:02}", secs / 3600 % 24, secs / 60 % 60, secs % 60)
-}
-
-/// A translation is usually a little longer than the original. Give the fitter a quarter more
-/// room so it wraps one size down instead of stacking lines, but never stretch a short label
-/// into a window-wide bar: the plate hugs the typeset text either way.
-fn widen(rect: Rect, bounds: Rect) -> Rect {
-    let width = rect
-        .width
-        .saturating_add(rect.width / 4)
-        .max(rect.width.saturating_add(24));
-    let grown = Rect::new(rect.x, rect.y, width, rect.height);
-    grown.clamp_to(&bounds).unwrap_or(rect)
 }
 
 fn show_on(overlay: &mut Option<LayeredOverlay>, bounds: Rect, frame: &Frame, damage: &[Rect]) -> Result<(), String> {
