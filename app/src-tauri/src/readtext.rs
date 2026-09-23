@@ -173,7 +173,7 @@ impl Reader {
         let mut score = 0.0f32;
         let mut kept = 0u32;
         for (x, width) in spans {
-            let Some(word) = crop.crop(Rect::new(x, 0, width, crop.height())) else {
+            let Some(word) = crop.crop(Rect::new(x as i32, 0, width, crop.height())) else {
                 continue;
             };
             if word.width() < 2 || word.height() < 6 {
