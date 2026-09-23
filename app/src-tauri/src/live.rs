@@ -114,12 +114,13 @@ pub fn set_paused(control: &Control, app: &AppHandle, paused: bool) {
     save_paused(paused);
     let _ = log(if paused { "paused" } else { "resumed" });
     let current = control.status();
-    if paused && !matches!(current.phase.as_str(), "downloading" | "preparing" | "starting" | "error") {
-        let mut status = view(
-            "paused",
-            "Пауза",
-            "Перевод спрятан. Нажмите «Продолжить» или Alt+T.",
-        );
+    if paused
+        && !matches!(
+            current.phase.as_str(),
+            "downloading" | "preparing" | "starting" | "error"
+        )
+    {
+        let mut status = view("paused", "Пауза", "Перевод спрятан. Нажмите «Продолжить» или Alt+T.");
         status.watched = current.watched;
         status.capture = current.capture;
         status.sample = current.sample;
@@ -233,10 +234,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                         "Нужен интернет. Список окон уже можно нажимать. Пробую ещё раз.",
                     )
                 } else {
-                    (
-                        "Распознавание не открылось",
-                        "Список окон работает. Пробую ещё раз.",
-                    )
+                    ("Распознавание не открылось", "Список окон работает. Пробую ещё раз.")
                 };
                 publish(&control, &app, view("error", title, detail));
                 wait(&control, &app, 8_000);
@@ -289,11 +287,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
         if control.is_paused() {
             clear(&mut overlay);
             let previous = control.status();
-            let mut status = view(
-                "paused",
-                "Пауза",
-                "Перевод спрятан. Нажмите «Продолжить» или Alt+T.",
-            );
+            let mut status = view("paused", "Пауза", "Перевод спрятан. Нажмите «Продолжить» или Alt+T.");
             status.watched = previous.watched;
             status.capture = previous.capture;
             status.sample = previous.sample;
@@ -317,230 +311,230 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
             continue;
         };
         {
-                let captured = match capture(hwnd) {
-                    Ok(captured) => captured,
-                    Err(error) => {
-                        log_once(&mut log_file, &mut last_log, &format!("capture {name}: {error}"));
-                        clear(&mut overlay);
-                        set_preview(&control, &app, String::new());
-                        let mut status = view(
+            let captured = match capture(hwnd) {
+                Ok(captured) => captured,
+                Err(error) => {
+                    log_once(&mut log_file, &mut last_log, &format!("capture {name}: {error}"));
+                    clear(&mut overlay);
+                    set_preview(&control, &app, String::new());
+                    let mut status = view(
                             "error",
                             "Не вижу это окно",
                             "Оно не отдаёт картинку. Выберите другое в списке или откройте его обычным окном, не на весь экран.",
                         );
-                        status.watched = name;
-                        publish(&control, &app, status);
-                        std::thread::sleep(Duration::from_millis(400));
-                        continue;
-                    }
-                };
-                let (frame, bounds, method) = captured;
-                if last_preview.elapsed() >= Duration::from_millis(800) {
-                    set_preview(&control, &app, preview_data_url(&frame));
-                    last_preview = Instant::now();
-                }
-
-                let sig = picture_sig(&frame);
-                if hwnd != last_hwnd {
-                    held.clear();
-                    last_sig.clear();
-                }
-                let stable = hwnd == last_hwnd && picture_same(&last_sig, &sig);
-                if stable && Instant::now() < quiet_until {
-                    std::thread::sleep(Duration::from_millis(180));
+                    status.watched = name;
+                    publish(&control, &app, status);
+                    std::thread::sleep(Duration::from_millis(400));
                     continue;
                 }
-                if stable {
-                    if let Some(surface) = overlay.as_mut() {
-                        if surface.size() == (bounds.width, bounds.height) {
-                            let _ = surface.move_to(bounds);
-                            std::thread::sleep(Duration::from_millis(180));
-                            continue;
-                        }
-                    }
-                }
+            };
+            let (frame, bounds, method) = captured;
+            if last_preview.elapsed() >= Duration::from_millis(800) {
+                set_preview(&control, &app, preview_data_url(&frame));
+                last_preview = Instant::now();
+            }
 
-                if held.is_empty() {
-                    let mut looking = view("watching", "Читаю", "Своё распознавание, Windows для этого не нужна.");
-                    looking.watched = name.clone();
-                    looking.capture = method.to_owned();
-                    publish(&control, &app, looking);
-                }
-
-                let (small, scale) = downscale(&frame);
-                let lines = match reader.read(&small) {
-                    Ok(lines) => lines,
-                    Err(error) => {
-                        log_once(&mut log_file, &mut last_log, &format!("ocr: {error}"));
-                        if !held.is_empty() {
-                            quiet_until = Instant::now() + Duration::from_millis(800);
-                            std::thread::sleep(Duration::from_millis(200));
-                            continue;
-                        }
-                        clear(&mut overlay);
-                        let mut status = view(
-                            "error",
-                            "Не могу прочитать текст",
-                            &format!("Своё распознавание сбилось. Пробую ещё раз. {}", clip(&error, 90)),
-                        );
-                        status.watched = name;
-                        status.capture = method.to_owned();
-                        publish(&control, &app, status);
-                        std::thread::sleep(Duration::from_millis(400));
+            let sig = picture_sig(&frame);
+            if hwnd != last_hwnd {
+                held.clear();
+                last_sig.clear();
+            }
+            let stable = hwnd == last_hwnd && picture_same(&last_sig, &sig);
+            if stable && Instant::now() < quiet_until {
+                std::thread::sleep(Duration::from_millis(180));
+                continue;
+            }
+            if stable {
+                if let Some(surface) = overlay.as_mut() {
+                    if surface.size() == (bounds.width, bounds.height) {
+                        let _ = surface.move_to(bounds);
+                        std::thread::sleep(Duration::from_millis(180));
                         continue;
                     }
-                };
+                }
+            }
 
-                let mut fresh = 0usize;
-                let mut pending = false;
-                let mut blocks = Vec::new();
-                let mut sample = String::new();
-                let mut sample_score = 0usize;
-                let mut saw_other = false;
-                let mut saw_cyrillic = false;
-                let mut saw_latin = false;
-                for line in lines {
-                    let source = line.text.trim();
-                    if source.chars().all(|ch| !ch.is_alphabetic()) {
+            if held.is_empty() {
+                let mut looking = view("watching", "Читаю", "Своё распознавание, Windows для этого не нужна.");
+                looking.watched = name.clone();
+                looking.capture = method.to_owned();
+                publish(&control, &app, looking);
+            }
+
+            let (small, scale) = downscale(&frame);
+            let lines = match reader.read(&small) {
+                Ok(lines) => lines,
+                Err(error) => {
+                    log_once(&mut log_file, &mut last_log, &format!("ocr: {error}"));
+                    if !held.is_empty() {
+                        quiet_until = Instant::now() + Duration::from_millis(800);
+                        std::thread::sleep(Duration::from_millis(200));
                         continue;
                     }
-                    if has_cyrillic(source) {
-                        // Window chrome of a Russian system — titles, menus, status lines — is
-                        // already in the target language; translating it only draws garbage over
-                        // text the user can read.
+                    clear(&mut overlay);
+                    let mut status = view(
+                        "error",
+                        "Не могу прочитать текст",
+                        &format!("Своё распознавание сбилось. Пробую ещё раз. {}", clip(&error, 90)),
+                    );
+                    status.watched = name;
+                    status.capture = method.to_owned();
+                    publish(&control, &app, status);
+                    std::thread::sleep(Duration::from_millis(400));
+                    continue;
+                }
+            };
+
+            let mut fresh = 0usize;
+            let mut pending = false;
+            let mut blocks = Vec::new();
+            let mut sample = String::new();
+            let mut sample_score = 0usize;
+            let mut saw_other = false;
+            let mut saw_cyrillic = false;
+            let mut saw_latin = false;
+            for line in lines {
+                let source = line.text.trim();
+                if source.chars().all(|ch| !ch.is_alphabetic()) {
+                    continue;
+                }
+                if has_cyrillic(source) {
+                    // Window chrome of a Russian system — titles, menus, status lines — is
+                    // already in the target language; translating it only draws garbage over
+                    // text the user can read.
+                    saw_cyrillic = true;
+                    continue;
+                }
+                if !looks_like_words(source) {
+                    // Recognition noise from borders and icons has no vowel-bearing words;
+                    // never translate or cover something that is not really text.
+                    continue;
+                }
+                match script_of(source) {
+                    Script::Other => {
+                        saw_other = true;
+                        continue;
+                    }
+                    Script::Cyrillic => {
                         saw_cyrillic = true;
                         continue;
                     }
-                    if !looks_like_words(source) {
-                        // Recognition noise from borders and icons has no vowel-bearing words;
-                        // never translate or cover something that is not really text.
-                        continue;
-                    }
-                    match script_of(source) {
-                        Script::Other => {
-                            saw_other = true;
+                    Script::None => continue,
+                    Script::Latin => saw_latin = true,
+                }
+                let key = clip(source, 180);
+                let translated = if let Some(cached) = cache.get(&key) {
+                    cached.clone()
+                } else if fresh >= NEW_LINES_PER_TICK {
+                    pending = true;
+                    continue;
+                } else {
+                    fresh += 1;
+                    match translate_fully(&mut translator, &key) {
+                        Ok(text) if has_cyrillic(&text) => {
+                            cache.insert(key.clone(), text.clone());
+                            control.inner.translated.fetch_add(1, Ordering::SeqCst);
+                            text
+                        }
+                        Ok(_) => continue,
+                        Err(error) => {
+                            log_once(&mut log_file, &mut last_log, &format!("translate: {error}"));
                             continue;
                         }
-                        Script::Cyrillic => {
-                            saw_cyrillic = true;
-                            continue;
-                        }
-                        Script::None => continue,
-                        Script::Latin => saw_latin = true,
                     }
-                    let key = clip(source, 180);
-                    let translated = if let Some(cached) = cache.get(&key) {
-                        cached.clone()
-                    } else if fresh >= NEW_LINES_PER_TICK {
-                        pending = true;
-                        continue;
-                    } else {
-                        fresh += 1;
-                        match translate_fully(&mut translator, &key) {
-                            Ok(text) if has_cyrillic(&text) => {
-                                cache.insert(key.clone(), text.clone());
-                                control.inner.translated.fetch_add(1, Ordering::SeqCst);
-                                text
-                            }
-                            Ok(_) => continue,
-                            Err(error) => {
-                                log_once(&mut log_file, &mut last_log, &format!("translate: {error}"));
-                                continue;
-                            }
-                        }
-                    };
-                    if cache.len() > 2000 {
-                        cache.clear();
-                    }
-                    let score = translated.chars().count();
-                    if score > sample_score {
-                        sample_score = score;
-                        sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
-                    }
-                    let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
-                    let rect = widen(rect, frame.bounds());
-                    if rect.height < 8 || rect.width < 8 {
-                        continue;
-                    }
-                    let size = (rect.height as f32 * 0.72).clamp(12.0, 42.0) as u32;
-                    blocks.push(
-                        OverlayBlock::new(rect, translated)
-                            .with_font(size, FontWeight::Regular, false)
-                            .with_colors([16, 16, 16, 230], [244, 244, 244, 255])
-                            .with_confidence(line.confidence),
-                    );
-                }
-
-                if blocks.is_empty() {
-                    clear(&mut overlay);
-                    let detail = if saw_other {
-                        "Текст не на английском. Сейчас перевожу английский на русский и пропускаю остальное."
-                    } else if saw_cyrillic && !saw_latin {
-                        "Текст уже на русском. Переводить нечего."
-                    } else if saw_latin {
-                        "Английский вижу, перевод ещё не готов. Пробую дальше."
-                    } else {
-                        "Английского текста пока не вижу. Напишите фразу крупными буквами."
-                    };
-                    let mut status = view("watching", "Смотрю", detail);
-                    status.watched = name;
-                    status.capture = method.to_owned();
-                    publish(&control, &app, status);
-                    last_sig = sig.clone();
-                    last_hwnd = hwnd;
-                    held.clear();
-                    std::thread::sleep(Duration::from_millis(180));
-                    continue;
-                }
-
-                let layout = OverlayLayout::new(OverlayStyle::Plate).with_blocks(blocks);
-                let Some(compositor) = compositor.as_mut() else {
-                    let mut status = view(
-                        "translating",
-                        "Перевожу",
-                        "Русский текст виден в этом окне. Поверх чужого окна нарисовать не получилось.",
-                    );
-                    status.watched = name;
-                    status.capture = method.to_owned();
-                    status.sample = sample.clone();
-                    publish(&control, &app, status);
-                    held = sample;
-                    last_sig = sig.clone();
-                    last_hwnd = hwnd;
-                    std::thread::sleep(Duration::from_millis(160));
-                    continue;
                 };
-                let composition = compositor.compose(&frame, &layout);
-                if let Err(error) = show_on(&mut overlay, bounds, &composition.frame, &composition.damage) {
-                    log_once(&mut log_file, &mut last_log, &format!("present: {error}"));
-                    overlay = None;
-                    let mut status = view(
-                        "translating",
-                        "Перевожу",
-                        "Русский текст ниже. На само окно он ещё не лёг, пробую без мигания.",
-                    );
-                    status.watched = name;
-                    status.capture = method.to_owned();
-                    status.sample = sample.clone();
-                    publish(&control, &app, status);
-                    held = sample;
-                    last_sig = sig.clone();
-                    last_hwnd = hwnd;
-                    quiet_until = Instant::now() + Duration::from_secs(2);
-                    std::thread::sleep(Duration::from_millis(200));
+                if cache.len() > 2000 {
+                    cache.clear();
+                }
+                let score = translated.chars().count();
+                if score > sample_score {
+                    sample_score = score;
+                    sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
+                }
+                let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
+                let rect = widen(rect, frame.bounds());
+                if rect.height < 8 || rect.width < 8 {
                     continue;
                 }
-                let mut status = view("translating", "Перевожу", "Английский на экране становится русским.");
+                let size = (rect.height as f32 * 0.72).clamp(12.0, 42.0) as u32;
+                blocks.push(
+                    OverlayBlock::new(rect, translated)
+                        .with_font(size, FontWeight::Regular, false)
+                        .with_colors([16, 16, 16, 230], [244, 244, 244, 255])
+                        .with_confidence(line.confidence),
+                );
+            }
+
+            if blocks.is_empty() {
+                clear(&mut overlay);
+                let detail = if saw_other {
+                    "Текст не на английском. Сейчас перевожу английский на русский и пропускаю остальное."
+                } else if saw_cyrillic && !saw_latin {
+                    "Текст уже на русском. Переводить нечего."
+                } else if saw_latin {
+                    "Английский вижу, перевод ещё не готов. Пробую дальше."
+                } else {
+                    "Английского текста пока не вижу. Напишите фразу крупными буквами."
+                };
+                let mut status = view("watching", "Смотрю", detail);
+                status.watched = name;
+                status.capture = method.to_owned();
+                publish(&control, &app, status);
+                last_sig = sig.clone();
+                last_hwnd = hwnd;
+                held.clear();
+                std::thread::sleep(Duration::from_millis(180));
+                continue;
+            }
+
+            let layout = OverlayLayout::new(OverlayStyle::Plate).with_blocks(blocks);
+            let Some(compositor) = compositor.as_mut() else {
+                let mut status = view(
+                    "translating",
+                    "Перевожу",
+                    "Русский текст виден в этом окне. Поверх чужого окна нарисовать не получилось.",
+                );
                 status.watched = name;
                 status.capture = method.to_owned();
                 status.sample = sample.clone();
                 publish(&control, &app, status);
                 held = sample;
-                if !pending {
-                    last_sig = sig.clone();
-                    last_hwnd = hwnd;
-                }
-                std::thread::sleep(Duration::from_millis(if pending { 40 } else { 160 }));
+                last_sig = sig.clone();
+                last_hwnd = hwnd;
+                std::thread::sleep(Duration::from_millis(160));
+                continue;
+            };
+            let composition = compositor.compose(&frame, &layout);
+            if let Err(error) = show_on(&mut overlay, bounds, &composition.frame, &composition.damage) {
+                log_once(&mut log_file, &mut last_log, &format!("present: {error}"));
+                overlay = None;
+                let mut status = view(
+                    "translating",
+                    "Перевожу",
+                    "Русский текст ниже. На само окно он ещё не лёг, пробую без мигания.",
+                );
+                status.watched = name;
+                status.capture = method.to_owned();
+                status.sample = sample.clone();
+                publish(&control, &app, status);
+                held = sample;
+                last_sig = sig.clone();
+                last_hwnd = hwnd;
+                quiet_until = Instant::now() + Duration::from_secs(2);
+                std::thread::sleep(Duration::from_millis(200));
+                continue;
+            }
+            let mut status = view("translating", "Перевожу", "Английский на экране становится русским.");
+            status.watched = name;
+            status.capture = method.to_owned();
+            status.sample = sample.clone();
+            publish(&control, &app, status);
+            held = sample;
+            if !pending {
+                last_sig = sig.clone();
+                last_hwnd = hwnd;
+            }
+            std::thread::sleep(Duration::from_millis(if pending { 40 } else { 160 }));
         }
     }
 }
@@ -592,11 +586,7 @@ fn describe_progress(note: &str) -> (String, String, String) {
             "Готовлю распознавание",
             "Своё, не из Windows. Первый раз может занять минуту.",
         ),
-        _ => (
-            "downloading",
-            "Скачиваю перевод",
-            "Это один раз. Нужен интернет.",
-        ),
+        _ => ("downloading", "Скачиваю перевод", "Это один раз. Нужен интернет."),
     };
     (phase.to_owned(), title.to_owned(), detail.to_owned())
 }
@@ -815,9 +805,7 @@ fn base64(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     let mut index = 0;
     while index + 3 <= data.len() {
-        let value = (u32::from(data[index]) << 16)
-            | (u32::from(data[index + 1]) << 8)
-            | u32::from(data[index + 2]);
+        let value = (u32::from(data[index]) << 16) | (u32::from(data[index + 1]) << 8) | u32::from(data[index + 2]);
         out.push(TABLE[((value >> 18) & 63) as usize] as char);
         out.push(TABLE[((value >> 12) & 63) as usize] as char);
         out.push(TABLE[((value >> 6) & 63) as usize] as char);
@@ -974,7 +962,10 @@ fn picture_same(left: &[u8], right: &[u8]) -> bool {
 /// room so it wraps one size down instead of stacking lines, but never stretch a short label
 /// into a window-wide bar: the plate hugs the typeset text either way.
 fn widen(rect: Rect, bounds: Rect) -> Rect {
-    let width = rect.width.saturating_add(rect.width / 4).max(rect.width.saturating_add(24));
+    let width = rect
+        .width
+        .saturating_add(rect.width / 4)
+        .max(rect.width.saturating_add(24));
     let grown = Rect::new(rect.x, rect.y, width, rect.height);
     grown.clamp_to(&bounds).unwrap_or(rect)
 }
@@ -1004,7 +995,9 @@ fn show_on(overlay: &mut Option<LayeredOverlay>, bounds: Rect, frame: &Frame, da
         }
     }
     *overlay = Some(LayeredOverlay::create(bounds).map_err(|error| error.to_string())?);
-    let surface = overlay.as_mut().ok_or_else(|| "окно перевода не открылось".to_owned())?;
+    let surface = overlay
+        .as_mut()
+        .ok_or_else(|| "окно перевода не открылось".to_owned())?;
     if surface.size() != (frame.width(), frame.height()) {
         let _ = surface.resize(frame.width(), frame.height());
     }
@@ -1256,11 +1249,14 @@ fn restore_choice_once(control: &Control) {
 }
 
 fn find_match(title: &str, process: &str) -> Option<Chosen> {
-    open_windows().into_iter().find(|target| target.title == title && process_matches(&target.process, process)).map(|target| Chosen {
-        id: target.id,
-        title: clip(&target.title, 80),
-        process: target.process,
-    })
+    open_windows()
+        .into_iter()
+        .find(|target| target.title == title && process_matches(&target.process, process))
+        .map(|target| Chosen {
+            id: target.id,
+            title: clip(&target.title, 80),
+            process: target.process,
+        })
 }
 
 fn process_matches(current: &str, saved: &str) -> bool {

@@ -18,9 +18,8 @@ const DET_URLS: &[&str] = &[
     "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/en_PP-OCRv3_det_infer.onnx",
     "https://media.githubusercontent.com/media/e-supple/process-medical-records/main/ocr_models/models--SWHL--RapidOCR/snapshots/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv4/en_PP-OCRv3_det_infer.onnx",
 ];
-const REC_URLS: &[&str] = &[
-    "https://huggingface.co/deepghs/paddleocr/resolve/main/rec/cyrillic_PP-OCRv3_rec/model.onnx",
-];
+const REC_URLS: &[&str] =
+    &["https://huggingface.co/deepghs/paddleocr/resolve/main/rec/cyrillic_PP-OCRv3_rec/model.onnx"];
 
 /// Character list for the cyrillic PP-OCRv3 recogniser, in file order (PaddleOCR's
 /// `cyrillic_dict.txt`: Latin plus Cyrillic, so English content reads correctly while Russian
@@ -270,7 +269,11 @@ fn first_output(outputs: &ort::session::SessionOutputs<'_>) -> Result<(Vec<i64>,
 }
 
 fn names(outlets: &[ort::value::Outlet]) -> String {
-    outlets.iter().map(|outlet| outlet.name()).collect::<Vec<_>>().join(", ")
+    outlets
+        .iter()
+        .map(|outlet| outlet.name())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn det_size(width: u32, height: u32) -> (u32, u32) {
@@ -330,17 +333,21 @@ fn bilinear(frame: &Frame, x: f32, y: f32) -> [u8; 3] {
 
 fn probability_map(shape: &[i64], values: &[f32]) -> Result<(u32, u32, Vec<f32>), String> {
     let dims: Vec<usize> = shape.iter().copied().map(|dim| dim.max(0) as usize).collect();
-    let dims = if dims.first() == Some(&1) { &dims[1..] } else { &dims[..] };
+    let dims = if dims.first() == Some(&1) {
+        &dims[1..]
+    } else {
+        &dims[..]
+    };
     match dims {
-        [1, height, width] if *height > 0 && *width > 0 => {
-            Ok((*width as u32, *height as u32, values.to_vec()))
-        }
-        [height, width] if *height > 0 && *width > 0 => {
-            Ok((*width as u32, *height as u32, values.to_vec()))
-        }
+        [1, height, width] if *height > 0 && *width > 0 => Ok((*width as u32, *height as u32, values.to_vec())),
+        [height, width] if *height > 0 && *width > 0 => Ok((*width as u32, *height as u32, values.to_vec())),
         [channels, height, width] if *channels <= 4 && *height > 8 && *width > 8 => {
             let plane = height * width;
-            Ok((*width as u32, *height as u32, values[..plane.min(values.len())].to_vec()))
+            Ok((
+                *width as u32,
+                *height as u32,
+                values[..plane.min(values.len())].to_vec(),
+            ))
         }
         [height, width, channels] if *channels <= 4 && *height > 8 && *width > 8 => {
             let mut planar = vec![0f32; height * width];
@@ -715,7 +722,14 @@ mod tests {
     fn a_notepad_line_splits_on_word_gaps() {
         let mut frame = Frame::filled(140, 22, [250, 250, 250, 255]).unwrap();
         let mut x = 4u32;
-        for letters in [[3u32, 3, 1, 1, 3], [3, 3, 3, 1], [1, 3, 3], [3, 3, 3, 2], [3, 3, 3], [3, 1, 3, 3]] {
+        for letters in [
+            [3u32, 3, 1, 1, 3],
+            [3, 3, 3, 1],
+            [1, 3, 3],
+            [3, 3, 3, 2],
+            [3, 3, 3],
+            [3, 1, 3, 3],
+        ] {
             for width in letters {
                 paint(&mut frame, x, width);
                 x += width + 1;

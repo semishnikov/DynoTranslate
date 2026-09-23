@@ -28,11 +28,7 @@ pub struct Translator {
 }
 
 impl Translator {
-    pub fn load(
-        bundled: Option<&Path>,
-        log: &mut dyn Write,
-        mut report: impl FnMut(&str),
-    ) -> Result<Self, String> {
+    pub fn load(bundled: Option<&Path>, log: &mut dyn Write, mut report: impl FnMut(&str)) -> Result<Self, String> {
         let dir = model_dir(bundled)?;
         let encoder_path = ensure(&dir, "encoder.onnx", ENCODER_URL, 8_000_000, log, &mut report)?;
         let decoder_path = ensure(&dir, "decoder.onnx", DECODER_URL, 8_000_000, log, &mut report)?;
@@ -262,9 +258,7 @@ fn file_ok(path: &Path, minimum: u64) -> bool {
 /// table, so the empty marker is removed before the dictionary is opened.
 fn load_tokenizer(path: &Path) -> Result<Tokenizer, String> {
     let prepared = prepare_tokenizer(path)?;
-    let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        Tokenizer::from_file(&prepared)
-    }));
+    let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Tokenizer::from_file(&prepared)));
     match loaded {
         Ok(Ok(tokenizer)) => Ok(tokenizer),
         Ok(Err(error)) => Err(format!("tokenizer: {error}")),
@@ -274,8 +268,7 @@ fn load_tokenizer(path: &Path) -> Result<Tokenizer, String> {
 
 fn prepare_tokenizer(path: &Path) -> Result<PathBuf, String> {
     let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let mut value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     let Some(normalizer) = value.get_mut("normalizer") else {
         return Ok(path.to_owned());
     };

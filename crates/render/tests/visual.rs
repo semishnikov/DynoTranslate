@@ -168,7 +168,10 @@ fn text_drawn_at_an_origin_lands_in_its_own_box() {
     assert!(touched.y >= origin.1 - 4, "ink started above the box: {touched:?}");
     // Two wrapped lines at size 20 is the most height the fit may produce here.
     let bottom_limit = origin.1 + 56;
-    assert!(touched.bottom() <= bottom_limit, "ink escaped below the box: {touched:?}");
+    assert!(
+        touched.bottom() <= bottom_limit,
+        "ink escaped below the box: {touched:?}"
+    );
     let right_limit = origin.0 + 268;
     assert!(touched.right() <= right_limit, "ink escaped right: {touched:?}");
 }
