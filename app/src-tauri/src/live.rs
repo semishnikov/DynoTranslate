@@ -404,6 +404,18 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                     if source.chars().all(|ch| !ch.is_alphabetic()) {
                         continue;
                     }
+                    if has_cyrillic(source) {
+                        // Window chrome of a Russian system — titles, menus, status lines — is
+                        // already in the target language; translating it only draws garbage over
+                        // text the user can read.
+                        saw_cyrillic = true;
+                        continue;
+                    }
+                    if !looks_like_words(source) {
+                        // Recognition noise from borders and icons has no vowel-bearing words;
+                        // never translate or cover something that is not really text.
+                        continue;
+                    }
                     match script_of(source) {
                         Script::Other => {
                             saw_other = true;
@@ -446,7 +458,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>) {
                         sample = format!("{} → {}", clip(&key, 120), clip(&translated, 120));
                     }
                     let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
-                    let rect = widen(rect, &translated, frame.bounds());
+                    let rect = widen(rect, frame.bounds());
                     if rect.height < 8 || rect.width < 8 {
                         continue;
                     }
@@ -721,6 +733,25 @@ fn has_cyrillic(text: &str) -> bool {
     text.chars().any(|ch| ('\u{0400}'..='\u{04FF}').contains(&ch))
 }
 
+/// Real text has at least one word of two or more letters with a vowel in it. Misreads of
+/// icons, borders and Russian chrome ("HHBLM", "KT I") never do, so they stay untranslated.
+fn looks_like_words(text: &str) -> bool {
+    let mut run = 0usize;
+    let mut vowel = false;
+    let mut done = false;
+    for ch in text.chars() {
+        if ch.is_ascii_alphabetic() {
+            run += 1;
+            vowel |= matches!(ch.to_ascii_lowercase(), 'a' | 'e' | 'i' | 'o' | 'u');
+        } else {
+            done |= run >= 2 && vowel;
+            run = 0;
+            vowel = false;
+        }
+    }
+    done || run >= 2 && vowel
+}
+
 fn clip(text: &str, limit: usize) -> String {
     let trimmed = text.trim();
     if trimmed.chars().count() <= limit {
@@ -939,11 +970,12 @@ fn picture_same(left: &[u8], right: &[u8]) -> bool {
     changed < 3
 }
 
-fn widen(rect: Rect, text: &str, bounds: Rect) -> Rect {
-    let chars = text.chars().count().max(1) as u32;
-    let size = (rect.height as f32 * 0.62).clamp(13.0, 32.0) as u32;
-    let needed = chars.saturating_mul(size).saturating_mul(3) / 5;
-    let grown = Rect::new(rect.x, rect.y, rect.width.max(needed), rect.height);
+/// A translation is usually a little longer than the original. Give the fitter a quarter more
+/// room so it wraps one size down instead of stacking lines, but never stretch a short label
+/// into a window-wide bar: the plate hugs the typeset text either way.
+fn widen(rect: Rect, bounds: Rect) -> Rect {
+    let width = rect.width.saturating_add(rect.width / 4).max(rect.width.saturating_add(24));
+    let grown = Rect::new(rect.x, rect.y, width, rect.height);
     grown.clamp_to(&bounds).unwrap_or(rect)
 }
 
@@ -1011,6 +1043,20 @@ fn translate_fully(translator: &mut Translator, text: &str) -> Result<String, St
 #[cfg(test)]
 mod tests {
     use super::sentence_pieces;
+
+    #[test]
+    fn russian_chrome_is_never_translated() {
+        use super::{has_cyrillic, looks_like_words};
+        assert!(has_cyrillic("Стр 1, Стлб 3 430% Windows (CRLF) UTF-8"));
+        assert!(has_cyrillic("*Безымянный – Блокнот"));
+        assert!(!has_cyrillic("When life gives you lemons, drink tequila"));
+        // Recognition noise from icons and borders has no vowel-bearing words.
+        assert!(!looks_like_words("HHBLM 5"));
+        assert!(!looks_like_words("KT I"));
+        assert!(looks_like_words("When life gives you lemons, drink tequila"));
+        assert!(looks_like_words("Hi"));
+        assert!(looks_like_words("New Game"));
+    }
 
     #[test]
     fn a_glued_notepad_line_is_three_sentences() {

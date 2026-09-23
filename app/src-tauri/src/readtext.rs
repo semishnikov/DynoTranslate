@@ -19,12 +19,13 @@ const DET_URLS: &[&str] = &[
     "https://media.githubusercontent.com/media/e-supple/process-medical-records/main/ocr_models/models--SWHL--RapidOCR/snapshots/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv4/en_PP-OCRv3_det_infer.onnx",
 ];
 const REC_URLS: &[&str] = &[
-    "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx",
-    "https://media.githubusercontent.com/media/e-supple/process-medical-records/main/ocr_models/models--SWHL--RapidOCR/snapshots/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv3/en_PP-OCRv3_rec_infer.onnx",
+    "https://huggingface.co/deepghs/paddleocr/resolve/main/rec/cyrillic_PP-OCRv3_rec/model.onnx",
 ];
 
-/// Character list for the English PP-OCRv3 recogniser, in file order. Model index 0 is the blank.
-const ALPHABET: &str = r###"0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~!"#$%&'()*+,-./ "###;
+/// Character list for the cyrillic PP-OCRv3 recogniser, in file order (PaddleOCR's
+/// `cyrillic_dict.txt`: Latin plus Cyrillic, so English content reads correctly while Russian
+/// window chrome reads as Cyrillic and is skipped by the live loop). Index 0 is the blank.
+const ALPHABET: &str = r###" !#$%&'(+,-./0123456789:?@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzÉéЁЄІЈЉЎАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяёђєіјљњћўџҐґ"###;
 
 pub struct Reader {
     detect: Session,
@@ -37,7 +38,7 @@ impl Reader {
     pub fn load(log: &mut dyn Write, mut report: impl FnMut(&str)) -> Result<Self, String> {
         let dir = data_dir()?;
         let detect_path = ensure(&dir, "ocr-det.onnx", DET_URLS, 1_800_000, log, &mut report)?;
-        let recognize_path = ensure(&dir, "ocr-rec.onnx", REC_URLS, 7_000_000, log, &mut report)?;
+        let recognize_path = ensure(&dir, "ocr-rec-cyr.onnx", REC_URLS, 7_000_000, log, &mut report)?;
         report("ocr-sessions");
         let _ = writeln!(log, "loading text reader");
         let detect = open_session(&detect_path).map_err(|error| format!("detect: {error}"))?;
@@ -154,20 +155,23 @@ impl Reader {
 
     /// One visual line, with spaces put back between words.
     ///
-    /// The recogniser often returns `Hello.Openthedoor.Newgame`. The picture still has the gaps,
-    /// so each word is read on its own and joined. The translator then sees the whole sentence.
+    /// The recogniser often glues words: `Hello.Openthedoor.Newgame`, or only some of them
+    /// (`Whenlifegivesyoulemons, drinktequila`). The picture still has the gaps, so whenever the
+    /// read has fewer spaces than the picture has word gaps, each word is read on its own and
+    /// joined; the translator then sees the whole sentence.
     fn read_line(&mut self, crop: &Frame) -> Result<(String, f32), String> {
         let (whole, confidence) = self.recognize_crop(crop)?;
         let whole = whole.trim();
         if whole.is_empty() {
             return Ok((String::new(), confidence));
         }
-        if whole.contains(' ') {
-            return Ok((whole.to_owned(), confidence));
-        }
         let spans = word_spans(crop);
-        if spans.len() < 2 || spans.len() > 16 {
+        if spans.len() < 2 {
             return Ok((loosen(whole), confidence));
+        }
+        let spaces = whole.chars().filter(|ch| *ch == ' ').count();
+        if spans.len() > 16 || spaces + 1 >= spans.len() {
+            return Ok((whole.to_owned(), confidence));
         }
         let mut parts: Vec<String> = Vec::new();
         let mut score = 0.0f32;
