@@ -251,12 +251,10 @@ bar, ONNX sessions use up to four intra-op threads (`model::ort_threads`), and t
 stream three bubbles per tick with recomposition every 30 ms instead of one long blocking
 batch.
 
-Verified on `65d14f2`: CI run 35890197993 is green on all four jobs, including the new unit
-tests (`bubble_lines_merge_and_separate_bubbles_do_not`,
-`transliterated_garbage_is_not_plausible_russian`, `plates_take_the_background_and_readable_ink`).
-The Release run 35890197995 is green and uploads `installer-windows` (28,920,723 bytes).
-The on-screen result — delay, freeze, plate fit on the comic — is not verified here: no
-display, no Windows.
+Verified on `e538679`: CI run 35897093049 is green on all four jobs and Release run
+35897093017 uploads `installer-windows`. This build carries the stage journal (`live.log`,
+path shown in the UI), the word-shape garbage gate, the 0.45 mean-confidence floor and the
+0.6 fitting floor. The on-screen result is not verified here: no display, no Windows.
 
 ## Next
 
