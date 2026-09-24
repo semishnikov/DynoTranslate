@@ -297,7 +297,8 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
     let mut context: VecDeque<(String, String)> = VecDeque::new();
     let mut last_settings_json = String::new();
     let mut frame_counter: u32 = 0;
-    let mut lowconf_seen: HashMap<String, u32> = HashMap::new();
+    let (async_tx, async_rx) = std::sync::mpsc::channel::<(String, String)>();
+    let mut dispatch_busy = false;
     let mut last_sig: Vec<u8> = Vec::new();
     let mut last_hwnd = 0isize;
     let mut quiet_until = Instant::now();
@@ -416,6 +417,23 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 let _ = writeln!(log_file, "{} settings {}", stamp(), settings_json);
                 last_settings_json = settings_json;
             }
+            // Finished async translations land here; the tick itself never waits on the
+            // network, which is what keeps the overlay at capture speed.
+            while let Ok((key, value)) = async_rx.try_recv() {
+                if key.is_empty() {
+                    dispatch_busy = false;
+                    continue;
+                }
+                let _ = writeln!(
+                    log_file,
+                    "{} async backend={} {:?} -> {:?}",
+                    stamp(),
+                    settings.translator,
+                    key,
+                    value
+                );
+                cache.insert(key, value);
+            }
             let mut pending = false;
             let mut blocks = Vec::new();
             let mut sample = String::new();
@@ -470,12 +488,15 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 }
             }
 
-            struct Kept {
-                key: String,
+            // A bubble is the unit of meaning: stacked lines with overlapping columns are one
+            // speech, translated together and covered by one plate. Translating line fragments
+            // separately is exactly what produced the word salad the owner rejected.
+            struct Bubble {
                 rect: Rect,
+                parts: Vec<String>,
                 conf: f32,
             }
-            let mut kept: Vec<Kept> = Vec::new();
+            let mut bubbles: Vec<Bubble> = Vec::new();
             for line in lines {
                 let source = line.text.trim();
                 if source.chars().all(|ch| !ch.is_alphabetic()) {
@@ -492,48 +513,30 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     continue;
                 }
                 if !looks_like_words(source) {
-                    // Recognition noise from borders and icons has no vowel-bearing words;
-                    // never translate or cover something that is not really text.
                     if dump {
                         let _ = writeln!(log_file, "{} skip reason=noise text={:?}", stamp(), source);
                     }
                     continue;
                 }
+                if chaotic(source) {
+                    // Browser chrome the recogniser transliterated into case-flipping Latin
+                    // ("veppyHuTOxnLEx+"): real English lines never look like that.
+                    if dump {
+                        let _ = writeln!(log_file, "{} skip reason=chaotic text={:?}", stamp(), source);
+                    }
+                    continue;
+                }
                 if line.confidence < settings.min_confidence {
-                    // Flickering garbage never reads the same three ticks in a row; a real
-                    // line the reader rated shy of the threshold does. Promote the stable
-                    // ones so hard frames keep their coverage.
-                    let promoted = if line.confidence >= 0.60 {
-                        let seen = lowconf_seen.entry(source.to_string()).or_insert(0);
-                        *seen = seen.saturating_add(1);
-                        *seen >= 3
-                    } else {
-                        false
-                    };
-                    if lowconf_seen.len() > 500 {
-                        lowconf_seen.clear();
-                    }
-                    if !promoted {
-                        if dump {
-                            let _ = writeln!(
-                                log_file,
-                                "{} skip reason=lowconf conf={:.2} text={:?}",
-                                stamp(),
-                                line.confidence,
-                                source
-                            );
-                        }
-                        continue;
-                    }
                     if dump {
                         let _ = writeln!(
                             log_file,
-                            "{} promote reason=stable conf={:.2} text={:?}",
+                            "{} skip reason=lowconf conf={:.2} text={:?}",
                             stamp(),
                             line.confidence,
                             source
                         );
                     }
+                    continue;
                 }
                 match script_of(source) {
                     Script::Other => {
@@ -551,127 +554,142 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 if rect.height < 8 || rect.width < 8 {
                     continue;
                 }
-                kept.push(Kept {
-                    key: clip(source, 180),
+                let cleaned = clean_line(source);
+                if cleaned.is_empty() {
+                    continue;
+                }
+                if let Some(last) = bubbles.last_mut() {
+                    let gap = rect.y - last.rect.bottom();
+                    let x_overlap = (last.rect.x + last.rect.width as i32).min(rect.x + rect.width as i32)
+                        - last.rect.x.max(rect.x);
+                    if x_overlap > 0 && (-2..=(last.rect.height as i32 / 4).max(6)).contains(&gap) {
+                        last.rect = last.rect.union(&rect);
+                        last.parts.push(cleaned);
+                        last.conf = last.conf.max(line.confidence);
+                        continue;
+                    }
+                }
+                bubbles.push(Bubble {
                     rect,
+                    parts: vec![cleaned],
                     conf: line.confidence,
                 });
             }
-
-            // Cached lines first; the rest go to the chosen backend in one batch so an LLM
-            // sees the whole screen at once. The local model stays the universal fallback.
-            let mut got: HashMap<String, String> = HashMap::new();
-            for item in &kept {
-                if let Some(cached) = cache.get(&item.key) {
-                    if dump {
-                        let _ = writeln!(log_file, "{} reuse {:?} -> {:?}", stamp(), item.key, cached);
-                    }
-                    got.insert(item.key.clone(), cached.clone());
+            if dump {
+                for bubble in &bubbles {
+                    let r = bubble.rect;
+                    let _ = writeln!(
+                        log_file,
+                        "{} bubble conf={:.2} rect=({},{},{}x{}) lines={} text={:?}",
+                        stamp(),
+                        bubble.conf,
+                        r.x,
+                        r.y,
+                        r.width,
+                        r.height,
+                        bubble.parts.len(),
+                        bubble.parts.join(" ")
+                    );
                 }
             }
-            let mut missing: Vec<&Kept> = kept.iter().filter(|item| !got.contains_key(&item.key)).collect();
+
+            // Whole bubbles go to the translator: cached ones draw now, the rest dispatch as
+            // one batch and arrive through the channel without blocking the loop.
+            let mut missing: Vec<String> = Vec::new();
+            for bubble in &bubbles {
+                let key = clip(&bubble.parts.join(" "), 400);
+                if !cache.contains_key(&key) {
+                    missing.push(key);
+                }
+            }
             if missing.len() > settings.max_lines_per_tick {
                 pending = true;
                 missing.truncate(settings.max_lines_per_tick);
             }
             if !missing.is_empty() {
-                let keys: Vec<String> = missing.iter().map(|item| item.key.clone()).collect();
-                let started = Instant::now();
-                let mut outs: Vec<Option<String>> = vec![None; keys.len()];
-                if settings.translator != "local" {
+                if settings.translator == "local" {
+                    let started = Instant::now();
+                    for key in &missing {
+                        match translate_fully(&mut translator, key) {
+                            Ok(text) if has_cyrillic(&text) => {
+                                cache.insert(key.clone(), text.clone());
+                                control.inner.translated.fetch_add(1, Ordering::SeqCst);
+                                if settings.context_lines > 0 {
+                                    context.push_back((key.clone(), text));
+                                    while context.len() > settings.context_lines {
+                                        context.pop_front();
+                                    }
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
+                            }
+                        }
+                    }
+                    let _ = writeln!(
+                        log_file,
+                        "{} translate backend=local ms={} bubbles={}",
+                        stamp(),
+                        started.elapsed().as_millis(),
+                        missing.len()
+                    );
+                } else if !dispatch_busy {
+                    dispatch_busy = true;
                     let pairs: Vec<(String, String)> = context.iter().cloned().collect();
-                    match backends::translate_batch(&settings.translator, &keys, &pairs, &settings) {
-                        Ok(batch) if batch.len() == keys.len() => {
-                            for (slot, text) in outs.iter_mut().zip(batch) {
-                                if has_cyrillic(&text) {
-                                    *slot = Some(text);
+                    let backend = settings.translator.clone();
+                    let snapshot = settings.clone();
+                    let sender = async_tx.clone();
+                    let _ = writeln!(
+                        log_file,
+                        "{} dispatch backend={} bubbles={}",
+                        stamp(),
+                        backend,
+                        missing.len()
+                    );
+                    std::thread::spawn(move || {
+                        let result = backends::translate_batch(&backend, &missing, &pairs, &snapshot);
+                        if let Ok(out) = result {
+                            for (key, value) in missing.into_iter().zip(out) {
+                                if has_cyrillic(&value) {
+                                    let _ = sender.send((key, value));
                                 }
                             }
                         }
-                        Ok(batch) => {
-                            let _ = writeln!(
-                                log_file,
-                                "{} backend {} returned {} of {} lines; local fills the rest",
-                                stamp(),
-                                settings.translator,
-                                batch.len(),
-                                keys.len()
-                            );
-                        }
-                        Err(error) => {
-                            let _ = writeln!(
-                                log_file,
-                                "{} backend {} error: {}; local fills the rest",
-                                stamp(),
-                                settings.translator,
-                                error
-                            );
-                        }
-                    }
-                }
-                for (index, key) in keys.iter().enumerate() {
-                    if outs[index].is_some() {
-                        continue;
-                    }
-                    match translate_fully(&mut translator, key) {
-                        Ok(text) if has_cyrillic(&text) => outs[index] = Some(text),
-                        Ok(_) => {}
-                        Err(error) => {
-                            let _ = writeln!(log_file, "{} translate error {:?}", stamp(), error);
-                        }
-                    }
-                }
-                let _ = writeln!(
-                    log_file,
-                    "{} translate backend={} ms={} lines={}",
-                    stamp(),
-                    settings.translator,
-                    started.elapsed().as_millis(),
-                    keys.len()
-                );
-                for (index, key) in keys.iter().enumerate() {
-                    let Some(text) = outs[index].clone() else {
-                        continue;
-                    };
-                    got.insert(key.clone(), text.clone());
-                    cache.insert(key.clone(), text.clone());
-                    control.inner.translated.fetch_add(1, Ordering::SeqCst);
-                    if settings.context_lines > 0 {
-                        context.push_back((key.clone(), text));
-                        while context.len() > settings.context_lines {
-                            context.pop_front();
-                        }
-                    }
+                        let _ = sender.send((String::new(), String::new()));
+                    });
+                    pending = true;
+                } else {
+                    pending = true;
                 }
             }
             if cache.len() > 2000 {
                 cache.clear();
             }
 
-            for item in &kept {
-                let Some(translated) = got.get(&item.key) else {
+            for bubble in &bubbles {
+                let key = clip(&bubble.parts.join(" "), 400);
+                let Some(translated) = cache.get(&key) else {
                     pending = true;
                     continue;
                 };
                 let score = translated.chars().count();
                 if score > sample_score {
                     sample_score = score;
-                    sample = format!("{} → {}", clip(&item.key, 120), clip(translated, 120));
+                    sample = format!("{} → {}", clip(&key, 120), clip(translated, 120));
                 }
-                // The plate is exactly the box the original occupies: detection already grows
-                // its boxes by a couple of pixels, so any extra padding only made plates
-                // overlap their neighbours.
-                let size = (item.rect.height as f32 * settings.font_scale).clamp(12.0, 42.0) as u32;
-                let (background, foreground) = plate_colors(&frame, &item.rect);
+                let size = (bubble.rect.height as f32 * settings.font_scale).clamp(12.0, 42.0) as u32;
+                let (background, foreground) = plate_colors(&frame, &bubble.rect);
                 if dump {
+                    let r = bubble.rect;
                     let _ = writeln!(
                         log_file,
                         "{} plate rect=({},{},{}x{}) font={} bg=[{},{},{}] fg=[{},{},{}] text={:?}",
                         stamp(),
-                        item.rect.x,
-                        item.rect.y,
-                        item.rect.width,
-                        item.rect.height,
+                        r.x,
+                        r.y,
+                        r.width,
+                        r.height,
                         size,
                         background[0],
                         background[1],
@@ -683,10 +701,10 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     );
                 }
                 blocks.push(
-                    OverlayBlock::new(item.rect, translated.clone())
+                    OverlayBlock::new(bubble.rect, translated.clone())
                         .with_font(size, FontWeight::Regular, false)
                         .with_colors(background, foreground)
-                        .with_confidence(item.conf),
+                        .with_confidence(bubble.conf),
                 );
             }
 
@@ -978,6 +996,50 @@ fn looks_like_words(text: &str) -> bool {
         }
     }
     done || run >= 2 && vowel
+}
+
+/// Recognition clips stray glyphs of neighbouring lines onto a line's ends; a leading or
+/// trailing one-letter token ("J ", "7 ") is never a word, so drop it before translation.
+fn clean_line(text: &str) -> String {
+    let mut words: Vec<&str> = text.split_whitespace().collect();
+    loop {
+        let tiny = |word: &&str| word.chars().filter(|ch| ch.is_alphabetic()).count() <= 1;
+        if words.len() > 2 && tiny(&words[0]) {
+            words.remove(0);
+        } else if words.len() > 2 && tiny(words.last().expect("checked")) {
+            words.pop();
+        } else {
+            break;
+        }
+    }
+    words.join(" ")
+}
+
+/// Browser chrome arrives as case-flipping Latin transliteration ("veppyHuTOxnLEx+",
+/// "YHH4TOKHR"); living English never does. A line is skipped when a third of its words
+/// flip case twice or more, carry a digit inside, or run longer than any real word.
+fn chaotic(text: &str) -> bool {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return false;
+    }
+    let bad = words.iter().filter(|word| chaotic_word(word)).count();
+    bad * 3 >= words.len()
+}
+
+fn chaotic_word(word: &str) -> bool {
+    let chars: Vec<char> = word.chars().filter(|ch| ch.is_alphabetic()).collect();
+    if chars.len() < 4 {
+        return false;
+    }
+    let mut switches = 0;
+    for pair in chars.windows(2) {
+        if pair[0].is_uppercase() != pair[1].is_uppercase() {
+            switches += 1;
+        }
+    }
+    let digit_inside = word.len() >= 5 && word.chars().any(|ch| ch.is_ascii_digit());
+    switches >= 2 || digit_inside || chars.len() > 18
 }
 
 fn clip(text: &str, limit: usize) -> String {
