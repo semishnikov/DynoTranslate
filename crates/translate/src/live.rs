@@ -27,6 +27,7 @@ use crate::engine::{
     EngineKind, TranslateItem, TranslatedItem, TranslationEngine, TranslationError,
     TranslationRequest, TranslationResponse,
 };
+use crate::google_free::GoogleFreeEngine;
 use crate::memory::{MemoryKey, TranslationMemory};
 
 /// Configuration for the live translation pipeline.
@@ -349,6 +350,21 @@ impl LivePipeline {
     /// Resets temporal tracking (e.g. on window switch).
     pub fn reset_tracking(&mut self) {
         self.tracker = StabilityTracker::new();
+    }
+
+    /// Convenience: process a frame using a built-in free Google Translate engine.
+    /// No API key, no configuration, no payment — works out of the box.
+    pub fn process_frame_default(
+        &mut self,
+        observations: &[Observation],
+    ) -> Vec<TranslatedBlock> {
+        let mut engine = GoogleFreeEngine::new();
+        self.process_frame(observations, &mut engine)
+    }
+
+    /// Creates a default engine (free Google Translate via web scraping).
+    pub fn default_engine() -> GoogleFreeEngine {
+        GoogleFreeEngine::new()
     }
 }
 

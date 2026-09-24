@@ -28,6 +28,7 @@ pub mod engine;
 pub mod fallback;
 pub mod glossary;
 pub mod google;
+pub mod google_free;
 pub mod live;
 pub mod llm;
 pub mod memory;
@@ -44,6 +45,7 @@ pub use engine::{
 pub use fallback::{CircuitBreaker, CircuitState, FallbackEngine};
 pub use glossary::{Glossary, GlossaryEntry};
 pub use google::{GoogleConfig, GoogleEngine};
+pub use google_free::GoogleFreeEngine;
 pub use live::{LiveConfig, LivePipeline, LiveStats, TranslatedBlock};
 pub use llm::{LlmConfig, LlmEngine, LlmProvider};
 pub use memory::{MemoryKey, MemoryRecord, MemoryStats, TranslationMemory};
