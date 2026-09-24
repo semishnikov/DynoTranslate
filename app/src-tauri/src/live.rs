@@ -1130,10 +1130,9 @@ fn stray_token(text: &str) -> bool {
 /// Addresses and web chrome: a browser paints the page title, the address and its buttons on every
 /// frame, and none of that is part of the picture the owner is watching.
 fn chrome_line(text: &str) -> bool {
+    const ADDRESSES: [&str; 6] = ["www.", "http", ".com", ".ru", ".net", ".org"];
     let lower = text.to_lowercase();
-    ["www.", "http", ".com", ".ru", ".net", ".org"]
-        .iter()
-        .any(|needle| lower.contains(needle))
+    ADDRESSES.iter().any(|needle| lower.contains(needle))
 }
 
 /// Recognition runs over horizontal bands, and only over the bands whose pixels moved.
@@ -1379,9 +1378,7 @@ fn distance(left: &str, right: &str) -> usize {
         current[0] = i + 1;
         for (j, right_char) in right.iter().enumerate() {
             let cost = usize::from(left_char != right_char);
-            current[j + 1] = (previous[j] + cost)
-                .min(previous[j + 1] + 1)
-                .min(current[j] + 1);
+            current[j + 1] = (previous[j] + cost).min(previous[j + 1] + 1).min(current[j] + 1);
         }
         std::mem::swap(&mut previous, &mut current);
     }
