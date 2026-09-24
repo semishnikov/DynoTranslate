@@ -20,9 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: app/package-lock.json
+          node-version: '22'
 
       - name: Install frontend dependencies
         run: npm ci
@@ -35,20 +33,28 @@ jobs:
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> target
-            src-tauri -> target
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: app
+
+      - name: Build Rust backend
+        run: cargo build --release --workspace --exclude lumen-shell
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0" --locked
 
-      - name: Build installer (MSI + NSIS)
-        run: cargo tauri build --bundles msi,nsis
+      - name: Build Tauri app
+        run: cargo tauri build --ci --no-bundle
         working-directory: src-tauri
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Build MSI installer
+        run: cargo tauri build --ci --bundles msi
+        working-directory: src-tauri
+
+      - name: Build NSIS installer
+        run: cargo tauri build --ci --bundles nsis
+        working-directory: src-tauri
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -74,7 +80,7 @@ jobs:
 
   build-linux:
     name: Build Linux Packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     
@@ -98,9 +104,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: app/package-lock.json
+          node-version: '22'
 
       - name: Install frontend dependencies
         run: npm ci
@@ -111,16 +115,23 @@ jobs:
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> target
-            src-tauri -> target
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: app
+
+      - name: Build Rust backend
+        run: cargo build --release --workspace --exclude lumen-shell
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0" --locked
 
-      - name: Build packages (deb + AppImage)
-        run: cargo tauri build --bundles deb,appimage
+      - name: Build Tauri app
+        run: cargo tauri build --ci --no-bundle
+        working-directory: src-tauri
+
+      - name: Build deb package
+        run: cargo tauri build --ci --bundles deb
         working-directory: src-tauri
 
       - name: Upload artifacts
@@ -129,7 +140,6 @@ jobs:
           name: linux-packages
           path: |
             src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
           retention-days: 30
 
       - name: Upload to Release
@@ -138,6 +148,5 @@ jobs:
         with:
           files: |
             src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
