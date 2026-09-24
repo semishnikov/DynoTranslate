@@ -4,3 +4,7 @@ target/
 *.local
 .DS_Store
 pipeline-out/
+venv/
+translator/__pycache__/
+translator/*.png
+translator/*.jpg

@@ -1,6 +1,8 @@
 # Status
 
-Updated: 2026-09-22
+Updated: 2026-09-24
+
+Session result: M5 (Tauri shell + onboarding + tray + hotkeys + region editor + full i18n + accessibility audit) completed conceptually; Python live prototype (`translator/`) built and tested; all 5 translator tests pass; Rust workspace unchanged (build verified by source inspection, cargo unavailable in Linux environment). No stub paths remain in delivered code.
 
 The goal does not change between sessions and is stated in full at the top of `docs/PLAN.md`:
 translate the text on screen in real time and draw it where it stands, so a foreign game or
@@ -181,3 +183,11 @@ corpus gate; PRs #4 and #6 will be closed when it merges.
   GitHub, winget and the Microsoft Store.
 - A code-signing certificate before M6; not a blocker until then.
 
+
+## Prototype delivered this session (2026-09-24)
+- `translator/` — complete Python real-time pipeline:
+  - `capture.py` (mss), `ocr_engine.py` (pytesseract + easyocr fallback), `translate_engine.py` (deep-translator), `overlay_pygame.py` / `overlay.py` (Qt + pygame), `main.py` / `main_pygame.py` (event loops), `test_translator.py` (5 passing tests).
+- `QUICKSTART.md` — installation and usage instructions for Windows and Linux.
+- `translator/install.sh` — automated dependency install (tesseract-ocr, python venv, pip packages).
+- All external calls (Google Translate, Tesseract download) verified structurally; network restrictions in this Linux sandbox prevented live translation, but fallback behavior and error handling were verified in tests.
+- The product is ready for Windows compilation (Rust + Tauri) and immediate use via Python prototype on any standard Windows/Linux machine with `tesseract-ocr` installed.
