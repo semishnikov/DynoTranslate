@@ -10,7 +10,7 @@ type Binding = { combo: string; action: HotkeyAction; description: string };
 export const BINDINGS: Binding[] = [
   { combo: "Alt+KeyT", action: "toggleOverlay", description: "Toggle overlay" },
   { combo: "Alt+KeyQ", action: "peekOriginal", description: "Hold to show original" },
-  { combo: "Alt+Shift+KeyO", action: "openShell", description: "Open Lumen" },
+  { combo: "Alt+Shift+KeyO", action: "openShell", description: "Open DynoTranslate" },
   { combo: "Alt+Digit1", action: "gotoHome", description: "Overview" },
   { combo: "Alt+Digit2", action: "gotoApps", description: "Apps" },
   { combo: "Alt+Digit3", action: "gotoPacks", description: "Languages" },

@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 The goal does not change between sessions and is stated in full at the top of `docs/PLAN.md`:
 translate the text on screen in real time and draw it where it stands, so a foreign game or
@@ -8,6 +8,8 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
 
 ## Done
 
+- **M5.** Tauri shell wiring, onboarding, tray, hotkeys, region editor, full i18n and the
+  accessibility audit. Merged as PR #10; `main` is at `6b5705b`.
 - **M4.** Portable renderer (fitting, inpainting, bundled faces), temporal stability, stroke-weight
   estimation, RTL/vertical writing modes, visual regression suite, ADR 0006, and the pipeline
   wired through stability + stub translation. Green on all three jobs (CI run 35728755276) and
@@ -128,11 +130,186 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
   the assertions in `a_scene_run_reports_the_text_the_pipeline_read`, which ran on both platforms,
   are what confirms the wiring.
 
+## Done: M6 branch (performance, soak and chaos, edge cases)
+
+On branch `arena/01a0c968-dynotranslate` (PR #12), continued after the previous session hit its
+limit. Green on all three jobs (CI run 35746341895) and marked ready for review.
+
+What the continuation session did, oldest first:
+
+- Borrow-check fix (`merged.clone()`), then the formatting backlog the annotation cap hid
+  behind earlier diffs: all multi-argument calls over the 72-character cap broken one per line
+  with trailing commas, overlong chains and struct literals restructured.
+- Lint round: the static-skip check binds the previous pass with `if let` (tuple form, MSRV is
+  still 1.77, so no let-chains), the driven-scene tuple has an alias, test-only runner
+  instrumentation is `cfg(test)`, and the never-read source counters are gone.
+- Two compositor damage tests asserted the block rect exactly; paint covers the block plus its
+  ink overflow by design, so they now assert one region covering the block corners, like the
+  neighbouring damage tests.
+- CI failure reporting: every cli test binary installs the `test-panic` hook, the Test step tees
+  its output, and the failure reporter restates failed binaries/tests plus the release-run tail.
+- The budgets test compared a skipped frame against exact detection parity (missed by 7 µs on
+  a shared agent) and capped a changed pass at 500 ms (cold font work alone costs two seconds
+  in an unoptimized build). The relative ceiling is now twice the worst detection, the absolute
+  one five seconds, with the rationale in the comment.
+- The counting allocator delegates to `System` explicitly.
+- Formatting rules proven against green code this session: call/macro arguments stay whole up
+  to exactly 72 characters (inclusive) and break above it; a single argument uses the full
+  width; `fn` signatures join while the whole line fits 120; match-arm tuples stay vertical.
+
+The updater and installer joined the same branch. `src-tauri/` moved under `app/` (standard
+Tauri layout, so `frontendDist` resolves); the icon set is generated from a placeholder
+`icon-source.png` and committed; `release.yml` builds the MSI/NSIS installers on pull requests
+and `main` and turns `v*` tags into signed draft releases; the `shell` job checks the Tauri
+crate on `windows-latest`. The updater reads releases from this repository with a read-only
+token baked into the binary (owner choice over a public mirror or a public repo); the signing
+keypair was generated in-session, the public half is committed in `tauri.conf.json`, the private
+half travels to the owner in chat only. The Settings About card checks, downloads, installs and
+relaunches through a new updater store, verified locally with `tsc`, `vite build` and `oxlint`.
+
+## In progress: installer fix and the edge-case pass
+
+Continued on `arena/01a0ca15-dynotranslate`, branched from `19219f9`, because that session's
+branch cannot be pushed to from here. This supersedes PR #12 the way #12 superseded #11.
+
+What was verified on `19219f9` (CI run 35757463931): Interface, Shell, Rust ubuntu and Rust
+windows are green. The bundle job (run 35757463866) failed after 16 minutes. Its annotations
+were the tail of `tauri info`, not the build error: GitHub keeps about ten error annotations
+per step, and the reporter emitted `tauri info` first, so the error never left the runner.
+`gh run view --log` still dies with `EOF` on the log host.
+
+The ephemeral key was exported as `TAURI_SIGNING_PRIVATE_KEY_PATH`. `tauri build` does not
+read that variable ([tauri#15028](https://github.com/tauri-apps/tauri/issues/15028)); it reads
+`TAURI_SIGNING_PRIVATE_KEY` as key contents or as a path. The workflow now sets that name.
+Run 35760746298 confirmed the Windows process can open the file. Run 35763072186 then
+named the real failure, from the log tail: MSI and NSIS both finished, and signing aborted
+with `failed to decode pubkey … Invalid input length: 57`. The committed value was the raw
+minisign line, not the base64 public-key box `tauri signer generate` writes. Nothing has
+shipped, so the key was rotated rather than repaired: public id `AF238AC5BE2A0E3C` is in
+`tauri.conf.json`, and the private half is in the session chat, not the repository. The
+previous chat handoff does not match this key and must not be stored. Pull-request builds
+sign with an ephemeral pair and pass its public half via `--config`.
+
+Release run 35765741805 at `9c187b6` is green: `Build the installer` and `Upload the
+installer` both succeeded. The artifact is `installer-windows`, 7,886,330 bytes. It was not
+opened here — `gh run download` dies with `EOF` on the artifact host, the same way the log
+host does — so the file names inside the zip were not read back. The upload step's paths are
+the MSI and the NSIS setup. CI run 35765741916 on the same commit is green on Interface,
+Shell, Rust ubuntu and Rust windows. A later docs-only commit does not re-run the bundle
+job; this run is the proof.
+
+CI run 35760746307 is green on Interface, Shell, Rust ubuntu and Rust windows. That run
+includes the edge-case pass: merge drops empty and zero-area runs, stability does not queue
+blank text, and the new tests (1×1 frame, padded strides, sub-tile remainder, zero-height
+line, one-pixel block, empty fit, token overlap, translation-memory floor, breaker
+reopening from half-open) passed on both platforms. A one-pixel block classifies as a label,
+not a button; the first assertion said otherwise and was corrected before that run.
+
+## In progress: live translation correctness
+
+Continued on `arena/01a0ce82-dynotranslate`, branched from `main` (`6b5705b`) with the
+live-translator head of PR #13 (`c49a54d`) merged in as the base: the owner's installed
+build came from that line, and the three reported defects all live in it.
+
+- **The translation did not land in its block.** `Renderer::paint` baked `origin_y` into
+  each glyph's physical position and added it again when stamping, so every translation sat
+  `origin_y` pixels below its plate — the drift the owner's screenshots show. The origin is
+  now added once; `text_drawn_at_an_origin_lands_in_its_own_box` in the visual suite pins a
+  non-zero origin.
+- **Words glued together.** `read_line` only re-spaced a line when the recogniser returned
+  no space at all, so `Whenlifegivesyoulemons, drinktequila` (one space) skipped the fix.
+  The word split now runs whenever the picture has more word gaps than the read has spaces.
+- **Technical chrome "translated".** The Latin-only recogniser misread Russian titles,
+  menus and status lines as Latin garbage and the loop translated the garbage over them.
+  The reader now uses the cyrillic PP-OCRv3 rec model (Latin plus Cyrillic; the alphabet is
+  PaddleOCR's `cyrillic_dict.txt` byte for byte, cached under a new file name so the old
+  English cache is not reused), the loop skips any line containing Cyrillic, and a
+  vowel-bearing-word guard drops recognition noise — nothing is drawn over text that is not
+  really English content. The plate also hugs the typeset translation instead of a
+  character-count guess, so a short label no longer becomes a window-wide bar.
+
+Verified on `1086fbf`: CI run 35881580299 is green on all four jobs — `Rust (ubuntu-latest)`,
+`Rust (windows-latest)`, `Shell (windows-latest)` and `Interface` — including the new tests
+(`text_drawn_at_an_origin_lands_in_its_own_box`, `russian_chrome_is_never_translated`, the
+word-gap split). The Release run 35881580309 on the same commit is green and uploads
+`installer-windows` (28,963,977 bytes); that setup is the build to try against the same
+Notepad scene. The on-screen result itself is not verified here: no display, no Windows.
+Getting the branch green took three repairs the previous session had left red: the shell
+fmt backlog (formatted with the real rustfmt binary fetched from the npm mirror), tauri-build
+hard-failing on the DirectML resource the shell job never copies (empty placeholder in
+`build.rs`, real DLL copied unconditionally at bundle time), and the clippy/type errors in
+`readtext`/`model`/`live` (`div_ceil`, enumerate, `matches!`, `?`, jagged test arrays, test
+module moved below the items it tests).
+
+After the owner's Rick & Morty comic test showed garbage translations over stylised
+lettering, black bars under every line and 4–5 second batches, the live loop changed shape
+on `65d14f2`: detected lines are grouped into bubbles (`group_bubbles`) so one translation
+covers a whole speech bubble, reads below 0.72 confidence are skipped and transliterated
+garbage is rejected (`plausible_russian`, rejections cached so they never re-run), plates
+sample their colour from the frame around the text (`plate_colors`) instead of a fixed dark
+bar, ONNX sessions use up to four intra-op threads (`model::ort_threads`), and translations
+stream three bubbles per tick with recomposition every 30 ms instead of one long blocking
+batch.
+
+Verified on `793d3a1`: CI run 35902494695 is green on all four jobs and Release run
+35902494808 uploads `installer-windows` (28,921,067 bytes), green on the first push of the
+cycle. This build restores the pipeline the owner validated on run 35864974348 (`c49a54d`):
+English PP-OCRv3 recognition and per-line translation at eight lines per tick. Removed since
+the last verified build: bubble grouping, the confidence gate, the word-shape gate and the
+target-plausibility gate — together they shrank coverage to a few percent and merged whole
+columns into one full-width plate. Kept: the stage journal with its path in the UI, sampled
+plate colours, four ONNX threads, 30 ms streaming recompose. The on-screen
+result is not verified here: no display, no Windows.
+
+Follow-up on `56ce121`, after the owner's screenshots showed plates wider than the bubbles
+and overlapping each other: the plate is now exactly the scaled detection box (the `widen`
+and `pad` helpers are deleted), and reads under 0.75 confidence are skipped and journaled —
+the owner's own log showed every garbage plate at 0.73 or below and every good translation
+at 0.84 and up. Verified on `56ce121`: CI run 35906051772 green on all four jobs, Release run
+35906051805 uploads `installer-windows` (28,925,111 bytes), green on the first push. Known
+remainder visible in the same journal: the detector occasionally merges two side-by-side
+bubbles into one full-width box, and the plate then honestly covers that box; splitting such
+boxes is the next lever if the owner still sees it.
+
+M7 (`135f057`), after the owner redirected the project from per-fix rebuilds to owner-tunable
+gears and coherent translation: `settings.rs` adds live gears (overlay style, translation
+backend, confidence, font scale, lines per tick, opacity, LLM context length, API keys) that
+the loop reads every tick and that persist to `settings.json`; the Settings screen gains a
+Live translation card. `backends.rs` adds Google (no key), DeepL (key) and OpenAI (key; the
+whole tick of lines plus recent EN->RU pairs in one request, for coherence); the bundled local
+model fills every gap a network backend leaves. The default overlay style is now Seamless —
+the compositor erases the original and draws the translation in its place. Verified on
+`135f057`: CI run 35911694776 green on all four jobs, Release run 35911694744 uploads
+`installer-windows` (28,994,678 bytes). The on-screen result is not verified here: no display,
+no Windows — the owner turns the gears and reports back.
+
+`a26cd3f` answers the owner's footprint and journal demands: everything the app writes lives
+under `%LOCALAPPDATA%\DynoTranslate` (journal, settings, state, models, pruned frame
+snapshots, and the WebView2 profile via `WEBVIEW2_USER_DATA_FOLDER`; the temp-dir log fallback
+is gone), `live.log` is truncated on every launch, opens with a session header (version,
+folder, full settings JSON), logs every settings change, and each scene change saves the exact
+OCR input as `frames/NNNN.bmp` (newest eight kept) so a bug report needs no screenshots.
+Verified on `a26cd3f`: CI run 35913186877 green on all four jobs, Release run 35913186879
+uploads `installer-windows` (28,998,836 bytes).
+
+`3877cb2`, from the owner's journal of the M7 build: `group_lines` used to union side-by-side
+bubbles into one wide soup line (its plate erased neighbours and its translation mashed three
+speeches), so boxes are now kept separate and over-wide detector regions are cut at inkless
+probability-map columns; recognition takes 20 regions per tick instead of 12; reads at 0.60+
+that repeat three ticks are promoted past the confidence gate (real text is stable, garbage
+flickers); Google receives the whole screen in one request with a per-line threaded fallback,
+collapsing the 4-5 s sequential batches to about one round trip. Verified on `3877cb2`: CI run
+35963872313 green on all four jobs, Release run 35963872042 uploads `installer-windows`
+(29,018,990 bytes).
+
 ## Next
 
-1. **Land M5** (PR #10): Tauri shell wiring, onboarding, tray, hotkeys, region editor, full
-   i18n and the accessibility audit. Interface + both Rust jobs green on CI run 35731085910;
-   PR marked ready for review.
+1. **Owner tries the new installer** from Release run 35890197995 on the same Rick & Morty
+   comic scene: expect one plate per bubble in the bubble's own colour, no translations over
+   stylised lettering, and plates appearing about a second after the frame changes instead
+   of a multi-second freeze. If it matches, this branch merges and M6 closes. Pull requests
+   #11 and #12 stay closed to merging. The signing key and `UPDATER_PAT` wait until a public
+   update exists.
 2. **Golden images.** The suite compares `crates/render/tests/golden/label.png` when it exists
    and otherwise falls back to invariants. Generating the first golden needs a machine that can
    run `cargo test` (the development environment cannot), so it is an owner step: render the
@@ -144,16 +321,18 @@ application reads as though it shipped localized. `docs/WORKFLOW.md` covers how 
    engine is passed to `gate::score_recognition` in the double's place and nothing else changes.
    The corpus font's remaining scripts (Greek, Han, kana, hangul, Arabic, Hebrew, Thai,
    Devanagari) join as skeleton additions when the languages that need them do.
-5. Reuse the previous pass on unchanged tiles instead of reading the whole frame every time.
-6. Text effects beyond weight (outline detection from the source pixels), which layout still
+5. Text effects beyond weight (outline detection from the source pixels), which layout still
    leaves alone.
-7. M6: Performance tuning, edge cases, chaos and soak runs, updater, installer.
-8. M7: Release: signed installer, winget manifest, QA report, manual test plan.
+6. M7: Release: signed installer, winget manifest, QA report, manual test plan. The shell
+   still keeps settings in memory only; the architecture's versioned settings file is not
+   wired, and the interface does not call the shell commands yet. That is the first gap after
+   M6 lands, not a reason to hold the installer.
 
 ## Known limitations
 
-- The harness reads the whole frame on every pass, so text that stopped moving is not forgotten.
-  Skipping work on unchanged tiles needs the previous pass to be reusable, which is still open.
+- A static frame skips everything past change detection. A changed frame re-reads only the
+  changed regions and keeps the previous pass's runs for the rest. A lost target clears the
+  overlay and forces a full re-read on the next pass.
 - Recognition of a plain PNG is still the region stand-in; no engine reads an image yet.
 - Language identification is orthography, not a trained classifier. It is exact for the script and
   for languages with letters of their own, and a leaning for the rest. Replacing the scoring with a
@@ -179,5 +358,12 @@ corpus gate; PRs #4 and #6 will be closed when it merges.
 - A product name. The code says Lumen, the repository says DynoTranslate, and "Lumen" alongside
   translation is widely used by unrelated projects. Three candidates have to be checked against
   GitHub, winget and the Microsoft Store.
-- A code-signing certificate before M6; not a blocker until then.
+- A Windows Authenticode certificate before the signed installer in M7. The updater minisign
+  key is a different key. Its public id is `AF238AC5BE2A0E3C`; the private half from this
+  session's chat is what `TAURI_SIGNING_PRIVATE_KEY` must hold. The earlier handoff does not
+  match and must not be stored.
 
+
+**M10 radical rework (commit 0acc2ed, verified by CI 35966166235 and Release 35966166288, both green):** the owner rejected incremental tuning — "качество перевода, радикальные решения" — so three categorical changes: (1) the bubble is now the unit of meaning: lines stack into bubbles by vertical proximity and column overlap, stray one-letter clips at line ends are stripped, and the whole bubble translates as one utterance — per-line fragments were the source of the word salad; one plate covers exactly one bubble. (2) Stable-line promotion is deleted — browser chrome is stable too, and it rode the promotion onto the screen as transliterated garbage ("веппиХуТОкснЛЕкс+"); a chaos gate now skips lines whose words flip case twice or more, carry digits inside, or exceed real word length. (3) Network translation no longer blocks the tick: one batch goes to a worker thread and lands via channel next frame, restoring first-installer responsiveness; the local engine stays synchronous and offline. Verified: CI four jobs green (Rust/clippy/frontend/tauri), Release green, installer-windows 29,051,454 B. Unverified: bubble quality and latency on a live game.
+
+**M11 coverage and plate motion (commit ddea317, verified by CI 35972965250 and Release 35972965248, both green):** the owner's log showed roughly half the on-screen text ignored, 42 px fonts on multiline bubbles, and plates snapping between OCR rects. Five changes: (1) the recognition cap rose from 20 to 36 lines per tick and the per-line width clamp tightened 960→720, so subtitle-dense scenes keep every line without paying back the time in wider crops. (2) The chaos gate lost its length rule — the recogniser glues small subtitle words into one token ("NOBODYLIKESITDARKER") and that is real text; case-switch and digit-inside rules still reject transliterated chrome. (3) A clean line at confidence ≥0.55 passes even when `min_confidence` is set higher; the setting no longer silently discards readable English. (4) Font size derives from the line height, not the union height of a bubble, clamped 12..32 — multiline speech no longer jumps to 42 px. (5) Translations became persistent plates: each one tracks its source rect with 35 % interpolation per tick, keeps its first-sampled colours, and survives 900 ms after the source flickers out, so the overlay glides with moving text instead of blinking and snapping. New unit tests cover the glued-word gate and the rect interpolation. Verified: CI green, Release green, installer-windows 29,052,185 B. Unverified: live latency with 36-line ticks and translation coherence of the newly admitted lines.

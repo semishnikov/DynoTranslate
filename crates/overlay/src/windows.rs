@@ -14,10 +14,9 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowDisplayAffinity, RegisterClassExW,
-    SetLayeredWindowAttributes, SetWindowDisplayAffinity, SetWindowPos, ShowWindow, UpdateLayeredWindow, CS_HREDRAW,
-    CS_VREDRAW, HWND_TOPMOST, LWA_ALPHA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNA, ULW_ALPHA,
-    WDA_EXCLUDEFROMCAPTURE, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    SetWindowDisplayAffinity, SetWindowPos, ShowWindow, UpdateLayeredWindow, CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNA, ULW_ALPHA, WDA_EXCLUDEFROMCAPTURE, WNDCLASSEXW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 use crate::compositor::CLEAR;
@@ -65,8 +64,9 @@ impl LayeredOverlay {
             tracing_excluded_fallback();
         }
 
+        // Do not call SetLayeredWindowAttributes here. After that call, UpdateLayeredWindow
+        // fails until the layered style is cleared, so the translation never lands on the window.
         unsafe {
-            let _ = SetLayeredWindowAttributes(handle, COLORREF(0), 255, LWA_ALPHA);
             let _ = SetWindowPos(
                 handle,
                 HWND_TOPMOST,
@@ -186,22 +186,17 @@ impl OverlaySurface for LayeredOverlay {
             AlphaFormat: windows::Win32::Graphics::Gdi::AC_SRC_ALPHA as u8,
         };
 
-        unsafe {
-            UpdateLayeredWindow(
-                self.handle,
-                screen.dc,
-                Some(&self.origin),
-                Some(&size),
-                dib.dc,
-                Some(&source),
-                COLORREF(0),
-                Some(&blend),
-                ULW_ALPHA,
-            )
+        if paint_window(self.handle, screen.dc, self.origin, size, dib.dc, source, blend).is_ok() {
+            return Ok(());
         }
-        .map_err(|error| SurfaceError::Platform {
-            operation: "UpdateLayeredWindow",
-            detail: error.message(),
+        // A window left in attribute mode rejects per-pixel updates. Clearing the layered
+        // bit and putting it back is the documented way to make UpdateLayeredWindow work again.
+        relayer(self.handle);
+        paint_window(self.handle, screen.dc, self.origin, size, dib.dc, source, blend).map_err(|error| {
+            SurfaceError::Platform {
+                operation: "UpdateLayeredWindow",
+                detail: error.message(),
+            }
         })
     }
 
@@ -219,6 +214,45 @@ impl Drop for LayeredOverlay {
         unsafe {
             let _ = DestroyWindow(self.handle);
         }
+    }
+}
+
+fn paint_window(
+    handle: HWND,
+    screen: HDC,
+    origin: POINT,
+    size: windows::Win32::Foundation::SIZE,
+    source_dc: HDC,
+    source: POINT,
+    blend: windows::Win32::Graphics::Gdi::BLENDFUNCTION,
+) -> windows::core::Result<()> {
+    unsafe {
+        UpdateLayeredWindow(
+            handle,
+            screen,
+            Some(&origin),
+            Some(&size),
+            source_dc,
+            Some(&source),
+            COLORREF(0),
+            Some(&blend),
+            ULW_ALPHA,
+        )
+    }
+}
+
+fn relayer(handle: HWND) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetWindowLongPtrW(hwnd: HWND, index: i32) -> isize;
+        fn SetWindowLongPtrW(hwnd: HWND, index: i32, value: isize) -> isize;
+    }
+    const GWL_EXSTYLE: i32 = -20;
+    let layered = WS_EX_LAYERED.0 as isize;
+    unsafe {
+        let style = GetWindowLongPtrW(handle, GWL_EXSTYLE);
+        SetWindowLongPtrW(handle, GWL_EXSTYLE, style & !layered);
+        SetWindowLongPtrW(handle, GWL_EXSTYLE, style | layered);
     }
 }
 

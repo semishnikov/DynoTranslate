@@ -134,6 +134,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_single_pixel_frame_round_trips() {
+        let mut frame = Frame::filled(1, 1, [1, 2, 3, 4]).unwrap();
+        assert_eq!(frame.pixel(0, 0), [1, 2, 3, 4]);
+        frame.set_pixel(0, 0, [9, 8, 7, 6]);
+        assert_eq!(frame.pixel(0, 0), [9, 8, 7, 6]);
+        assert_eq!(frame.row(0).len(), 4);
+        assert_eq!(frame.crop(frame.bounds()).unwrap().as_bytes(), &[9, 8, 7, 6]);
+    }
+
+    #[test]
+    fn zero_dimensions_are_rejected() {
+        let error = Frame::filled(0, 4, [0, 0, 0, 255]).unwrap_err();
+        assert!(matches!(error, FrameError::EmptyDimensions { width: 0, height: 4 }));
+    }
+
+    #[test]
+    fn a_crop_of_a_padded_frame_drops_the_padding() {
+        let mut frame = Frame::from_bgra(2, 2, 16, vec![7; 32]).unwrap();
+        frame.set_pixel(0, 0, [1, 1, 1, 1]);
+        frame.set_pixel(1, 0, [2, 2, 2, 2]);
+        frame.set_pixel(0, 1, [3, 3, 3, 3]);
+        frame.set_pixel(1, 1, [4, 4, 4, 4]);
+        let cropped = frame.crop(frame.bounds()).unwrap();
+        assert_eq!(cropped.stride(), 8);
+        assert_eq!(cropped.as_bytes().len(), 16);
+        assert_eq!(cropped.pixel(1, 1), [4, 4, 4, 4]);
+        assert!(!cropped.as_bytes().contains(&7));
+    }
+
+    #[test]
     fn rejects_buffers_that_do_not_match_the_declared_geometry() {
         let error = Frame::packed(4, 4, vec![0; 16]).unwrap_err();
         assert!(matches!(error, FrameError::BufferSize { .. }));

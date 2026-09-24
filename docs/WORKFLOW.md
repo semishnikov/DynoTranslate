@@ -89,6 +89,13 @@ gh api "repos/semishnikov/DynoTranslate/check-runs/<job-id>/annotations?per_page
 Annotation titles are `fmt` or `clippy`. This is the only channel available; do not plan around
 `gh run view --log`, it does not resolve from the development environment.
 
+GitHub keeps about ten error annotations per step, and it keeps the first ones. A reporter that
+emits `tauri info` or a fmt diff before the actual error spends that budget, and the development
+environment then sees a green-looking tail instead of the failure. Emit the error lines first, cap
+them at eight, and give a long build its own annotations in the step that failed — a later
+`if: failure()` step has a separate budget, but it cannot recover lines the first step never
+recorded.
+
 If a new kind of failure needs the same treatment, extend that step rather than adding a job, and
 keep the output bounded — annotations are capped and a full compiler transcript is not useful.
 

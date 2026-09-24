@@ -147,6 +147,13 @@ mod tests {
     }
 
     #[test]
+    fn a_blank_turn_is_not_recorded() {
+        let mut ctx = DialogueContext::new("scene", 4);
+        ctx.push(Some("   "), "   ", Some("  "));
+        assert!(ctx.is_empty());
+    }
+
+    #[test]
     fn resets_on_scope_change() {
         let mut ctx = DialogueContext::standard("app-1");
         ctx.push(None, "Hello", None);

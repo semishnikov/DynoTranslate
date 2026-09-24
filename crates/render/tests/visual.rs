@@ -10,7 +10,7 @@
 //! comparison activates on the next run. Nothing else changes.
 
 use lumen_core::{Frame, Rect};
-use lumen_render::{draw_fitted, inpaint, FontWeight, Renderer, TextAlign, TextSpec, WritingMode};
+use lumen_render::{draw_fitted, inpaint, FontWeight, Renderer, TextAlign, TextSpec, WritingMode, MIN_FIT_SCALE};
 
 fn install_annotations() {
     use std::sync::Once;
@@ -63,7 +63,7 @@ fn a_tiny_box_never_reports_a_size_below_the_floor() {
     let spec = TextSpec::new("Pack my box with five dozen liquor jugs", 64, 18, 32);
     let ready = renderer.fit(&spec).expect("fit");
     assert!(
-        ready.fitted.size >= 32.0 * 0.8 - 0.01,
+        ready.fitted.size >= 32.0 * MIN_FIT_SCALE - 0.01,
         "size {} fell under the floor",
         ready.fitted.size
     );
@@ -152,4 +152,26 @@ fn an_optional_golden_png_is_compared_when_present() {
             .unwrap_or(0);
         panic!("golden mismatch at byte {mismatch} of {}", buf.len());
     }
+}
+
+#[test]
+fn text_drawn_at_an_origin_lands_in_its_own_box() {
+    install_annotations();
+    let mut renderer = Renderer::new().expect("bundled fonts");
+    let origin = (60, 90);
+    let spec = TextSpec::new("Перевод в своём блоке", 260, 36, 20);
+    let mut frame = scene(360, 220, [0, 0, 0, 0]);
+    let foreground = [255, 255, 255, 255];
+    let touched = draw_fitted(&mut renderer, &mut frame, &spec, origin, foreground, None, 1.0).expect("fit");
+    assert!(ink_count(&frame) > 10, "nothing was drawn");
+    assert!(touched.x >= origin.0 - 4, "ink started left of the box: {touched:?}");
+    assert!(touched.y >= origin.1 - 4, "ink started above the box: {touched:?}");
+    // Two wrapped lines at size 20 is the most height the fit may produce here.
+    let bottom_limit = origin.1 + 56;
+    assert!(
+        touched.bottom() <= bottom_limit,
+        "ink escaped below the box: {touched:?}"
+    );
+    let right_limit = origin.0 + 268;
+    assert!(touched.right() <= right_limit, "ink escaped right: {touched:?}");
 }

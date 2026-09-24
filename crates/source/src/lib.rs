@@ -114,6 +114,14 @@ pub trait TextSource {
 
     /// One run per line in reading order, restricted to `request.regions` when it is not empty.
     fn read(&mut self, request: &ReadRequest<'_>) -> Result<Vec<TextRun>, SourceError>;
+
+    /// Steps the source to the next capture without reading.
+    ///
+    /// A source whose answer depends on which frame is being shown implements this; the
+    /// pipeline calls it once per captured frame, which keeps the source in step even when a
+    /// frame is answered from the previous pass instead of a fresh read. The default is a
+    /// no-op for sources that answer from the pixels alone.
+    fn advance(&mut self) {}
 }
 
 /// Sorts runs into reading order: top to bottom, left to right within one line.

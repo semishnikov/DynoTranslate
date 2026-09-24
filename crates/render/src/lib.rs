@@ -25,6 +25,6 @@ pub use text::{draw_fitted, FontWeight, ReadyText, Renderer, TextAlign};
 pub use writing::{dominant_direction, writing_mode_of, Direction, WritingMode};
 
 /// The smallest share of the original font size a fitted line may use. Fitting shrinks to make
-/// the translation fit the original box; going below four fifths of the size makes interface
-/// text unreadable, so the floor is a product rule expressed as data.
-pub const MIN_FIT_SCALE: f32 = 0.8;
+/// the translation fit the original box; Russian routinely needs a third more room than
+/// English, so the floor sits at three fifths — small but whole beats large but overflowing.
+pub const MIN_FIT_SCALE: f32 = 0.6;

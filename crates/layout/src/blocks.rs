@@ -500,6 +500,34 @@ mod tests {
     }
 
     #[test]
+    fn a_one_pixel_frame_is_classified_without_panic() {
+        let frame = scene(1, 1);
+        let runs = vec![TextRun::new("x", Rect::new(0, 0, 1, 1), SourceKind::Ocr, 0.5)];
+
+        let blocks = analyse(&frame, runs, &config());
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].font_size, 1);
+        // A one-pixel block has no ring left once the pixel itself is excluded, so the
+        // sampler reports no surface. That missing surface is within the colour tolerance
+        // of the page, so the fill rule does not call it a button. The pin is that the
+        // path returns a label rather than panicking.
+        assert_eq!(blocks[0].kind, BlockKind::Label);
+    }
+
+    #[test]
+    fn a_zero_area_run_does_not_panic_the_classifier() {
+        let frame = scene(64, 64);
+        let flat = TextRun::new("x", Rect::new(4, 4, 0, 16), SourceKind::Ocr, 0.9);
+
+        let blocks = analyse(&frame, vec![flat], &config());
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].bounds.width, 0);
+        assert_eq!(blocks[0].kind, BlockKind::Label);
+    }
+
+    #[test]
     fn an_empty_frame_produces_no_blocks() {
         let frame = scene(640, 360);
 

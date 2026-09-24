@@ -31,7 +31,7 @@ pub struct TextSpec {
     /// Height of the box in pixels.
     pub max_height: u32,
     /// Size the original text was measured at. Fitting starts here and never goes below
-    /// 80 % of it.
+    /// 60 % of it.
     pub preferred_size: u32,
     pub weight: FontWeight,
     pub italic: bool,
@@ -88,7 +88,7 @@ pub struct FittedText {
     pub line_height: f32,
     /// Whether the fit hit the floor and is allowed to overflow the box.
     pub at_floor: bool,
-    /// Share of the preferred size actually used, in 0.8..=1.0.
+    /// Share of the preferred size actually used, in 0.6..=1.0.
     pub scale: f32,
 }
 
@@ -196,13 +196,13 @@ mod tests {
     }
 
     #[test]
-    fn a_long_line_shrinks_but_never_below_eighty_percent() {
+    fn a_long_line_shrinks_but_never_below_sixty_percent() {
         install_annotations();
         // 40 chars * 0.5 * 16 = 320 wide against a 100-wide box.
         let text = "a".repeat(40);
         let spec = TextSpec::new(text, 100, 400, 16);
         let fitted = fit_text(&spec, fake_measure).unwrap();
-        assert!(fitted.size >= 16.0 * 0.8 - 0.001, "{}", fitted.size);
+        assert!(fitted.size >= 16.0 * MIN_FIT_SCALE - 0.001, "{}", fitted.size);
         assert!(fitted.size < 16.0);
     }
 
@@ -212,9 +212,9 @@ mod tests {
         let text = "b".repeat(80);
         let spec = TextSpec::new(text, 20, 20, 32);
         let fitted = fit_text(&spec, fake_measure).unwrap();
-        assert!((fitted.size - 32.0 * 0.8).abs() < 0.5, "{}", fitted.size);
+        assert!((fitted.size - 32.0 * MIN_FIT_SCALE).abs() < 0.5, "{}", fitted.size);
         assert!(fitted.at_floor);
-        assert!((fitted.scale - 0.8).abs() < 0.01);
+        assert!((fitted.scale - MIN_FIT_SCALE).abs() < 0.01);
     }
 
     #[test]
@@ -224,6 +224,26 @@ mod tests {
         let spec = TextSpec::new(text, 200, 40, 16);
         let fitted = fit_text(&spec, fake_measure).unwrap();
         assert!(fitted.size < 16.0);
+    }
+
+    #[test]
+    fn empty_text_keeps_the_preferred_size() {
+        install_annotations();
+        let spec = TextSpec::new("", 20, 20, 16);
+        let fitted = fit_text(&spec, fake_measure).unwrap();
+        assert_eq!(fitted.size, 16.0);
+        assert!(!fitted.at_floor);
+    }
+
+    #[test]
+    fn a_single_character_wider_than_the_box_shrinks_toward_the_floor() {
+        install_annotations();
+        // One character is `size * 0.5` wide. At 16 that is 8, against a 4-wide box.
+        let spec = TextSpec::new("W", 4, 40, 16);
+        let fitted = fit_text(&spec, fake_measure).unwrap();
+        assert!(fitted.size < 16.0);
+        assert!(fitted.size >= 16.0 * MIN_FIT_SCALE - 0.001, "{}", fitted.size);
+        assert!(fitted.at_floor);
     }
 
     #[test]

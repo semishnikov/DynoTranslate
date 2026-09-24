@@ -206,6 +206,61 @@ mod tests {
         }
     }
 
+    fn padded(pad: u8) -> Frame {
+        let mut pixels = vec![pad; 32];
+        for y in 0..2 {
+            for x in 0..4 {
+                let offset = y * 16 + x * 4;
+                pixels[offset..offset + 4].copy_from_slice(&[10, 20, 30, 255]);
+            }
+        }
+        Frame::from_bgra(4, 2, 16, pixels).unwrap()
+    }
+
+    #[test]
+    fn a_one_pixel_frame_is_a_single_tile() {
+        let mut detector = ChangeDetector::new(64);
+        let report = detector.accept(&Frame::filled(1, 1, [0, 0, 0, 255]).unwrap());
+        assert_eq!(report.total_tiles, 1);
+        assert_eq!(report.regions, vec![Rect::new(0, 0, 1, 1)]);
+    }
+
+    #[test]
+    fn a_frame_smaller_than_a_tile_is_one_tile_inside_the_frame() {
+        let mut detector = ChangeDetector::new(64);
+        let report = detector.accept(&Frame::filled(20, 10, [0, 0, 0, 255]).unwrap());
+        assert_eq!(report.total_tiles, 1);
+        assert_eq!(report.regions, vec![Rect::new(0, 0, 20, 10)]);
+    }
+
+    #[test]
+    fn the_remainder_tile_is_only_as_wide_as_the_frame() {
+        let mut detector = ChangeDetector::new(64);
+        let mut frame = Frame::filled(65, 1, [0, 0, 0, 255]).unwrap();
+        detector.accept(&frame);
+        frame.set_pixel(64, 0, [1, 2, 3, 4]);
+        let report = detector.accept(&frame);
+        assert_eq!(report.changed_tiles, 1);
+        assert_eq!(report.regions, vec![Rect::new(64, 0, 1, 1)]);
+    }
+
+    #[test]
+    fn padding_beyond_the_row_does_not_count_as_a_change() {
+        let mut detector = ChangeDetector::new(64);
+        detector.accept(&padded(1));
+        let report = detector.accept(&padded(9));
+        assert!(report.is_static());
+    }
+
+    #[test]
+    fn a_pixel_change_on_a_padded_frame_is_still_detected() {
+        let mut detector = ChangeDetector::new(64);
+        let mut frame = padded(0);
+        detector.accept(&frame);
+        frame.set_pixel(1, 1, [255, 0, 0, 255]);
+        assert_eq!(detector.accept(&frame).changed_tiles, 1);
+    }
+
     #[test]
     fn forgetting_the_grid_reports_everything_again() {
         let mut detector = ChangeDetector::new(64);

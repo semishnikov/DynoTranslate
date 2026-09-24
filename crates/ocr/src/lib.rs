@@ -9,6 +9,9 @@ use lumen_core::{Frame, Rect};
 pub mod benchmark;
 pub mod stub;
 
+#[cfg(windows)]
+pub mod windows;
+
 pub use stub::StubEngine;
 
 /// One recognised line of text: the characters in reading order, their bounds in frame pixels, and
