@@ -94,11 +94,19 @@ impl Reader {
         let (map_w, map_h, mut values) = probability_map(&shape, &map)?;
         squeeze_scores(&mut values);
         let boxes = components(&values, map_w, map_h);
+        let mut spots = Vec::new();
+        for spot in boxes {
+            if spot.width > spot.height * 3 {
+                spots.extend(split_wide(&values, map_w, map_h, spot));
+            } else {
+                spots.push(spot);
+            }
+        }
         let scale_x = frame.width() as f32 / map_w as f32;
         let scale_y = frame.height() as f32 / map_h as f32;
         let frame_area = u64::from(frame.width()) * u64::from(frame.height());
         let mut scaled = Vec::new();
-        for spot in boxes {
+        for spot in spots {
             let grown = unclip(spot);
             let x = (grown.x as f32 * scale_x).floor() as i32 - 2;
             let y = (grown.y as f32 * scale_y).floor() as i32 - 2;
@@ -124,7 +132,7 @@ impl Reader {
     fn recognize_lines(&mut self, frame: &Frame, lines: &[Rect]) -> Result<Vec<Recognition>, String> {
         let mut found = Vec::new();
         let mut last_error = None;
-        for line in lines.iter().take(12) {
+        for line in lines.iter().take(20) {
             let Some(crop) = frame.crop(*line) else {
                 continue;
             };
@@ -464,25 +472,77 @@ fn unclip(spot: Rect) -> Rect {
     )
 }
 
+/// Lines stay separate: unioning boxes that merely share a row used to glue
+/// side-by-side bubbles into one wide soup line, whose plate then erased its
+/// neighbours. The tick translates the whole screen together anyway.
 fn group_lines(mut boxes: Vec<Rect>) -> Vec<Rect> {
-    boxes.sort_by_key(|spot| spot.y);
-    let mut lines = Vec::new();
-    for spot in boxes {
-        if let Some(line) = lines.last_mut() {
-            let overlap = vertical_overlap(*line, spot);
-            let slim = line.height.min(spot.height) as i32;
-            if slim > 0 && overlap * 2 > slim {
-                *line = line.union(&spot);
-                continue;
-            }
-        }
-        lines.push(spot);
-    }
-    lines
+    boxes.sort_by_key(|spot| (spot.y, spot.x));
+    boxes
 }
 
-fn vertical_overlap(left: Rect, right: Rect) -> i32 {
-    (left.bottom().min(right.bottom()) - left.y.max(right.y)).max(0)
+/// A detector region much wider than a text line usually spans several
+/// side-by-side bubbles; the recogniser would mash them into one soup, so the
+/// region is cut wherever a run of probability-map columns carries no ink.
+fn split_wide(map: &[f32], width: u32, height: u32, spot: Rect) -> Vec<Rect> {
+    let min_gap = 2.max(spot.height / 6) as usize;
+    let mut active = vec![false; spot.width as usize];
+    for (slot, column) in active.iter_mut().enumerate() {
+        let x = spot.x + slot as i32;
+        if x < 0 || x >= width as i32 {
+            continue;
+        }
+        for y in spot.y..spot.y + spot.height as i32 {
+            if y < 0 || y >= height as i32 {
+                continue;
+            }
+            if map[(y as u32 * width + x as u32) as usize] >= 0.3 {
+                *column = true;
+                break;
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut gap = 0usize;
+    for (index, &on) in active.iter().enumerate() {
+        if on {
+            if run_start.is_none() {
+                run_start = Some(index);
+            }
+            gap = 0;
+            continue;
+        }
+        let Some(start) = run_start else { continue };
+        gap += 1;
+        if gap < min_gap {
+            continue;
+        }
+        let end = index - gap;
+        if end + 1 > start && (end - start + 1) >= 3 {
+            out.push(Rect::new(
+                spot.x + start as i32,
+                spot.y,
+                (end - start + 1) as u32,
+                spot.height,
+            ));
+        }
+        run_start = None;
+    }
+    if let Some(start) = run_start {
+        let end = active.len() - 1;
+        if end > start + 1 {
+            out.push(Rect::new(
+                spot.x + start as i32,
+                spot.y,
+                (end - start + 1) as u32,
+                spot.height,
+            ));
+        }
+    }
+    if out.len() <= 1 {
+        return vec![spot];
+    }
+    out
 }
 
 fn edge_lines(frame: &Frame) -> Vec<Rect> {

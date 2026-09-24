@@ -297,6 +297,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
     let mut context: VecDeque<(String, String)> = VecDeque::new();
     let mut last_settings_json = String::new();
     let mut frame_counter: u32 = 0;
+    let mut lowconf_seen: HashMap<String, u32> = HashMap::new();
     let mut last_sig: Vec<u8> = Vec::new();
     let mut last_hwnd = 0isize;
     let mut quiet_until = Instant::now();
@@ -499,16 +500,40 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     continue;
                 }
                 if line.confidence < settings.min_confidence {
+                    // Flickering garbage never reads the same three ticks in a row; a real
+                    // line the reader rated shy of the threshold does. Promote the stable
+                    // ones so hard frames keep their coverage.
+                    let promoted = if line.confidence >= 0.60 {
+                        let seen = lowconf_seen.entry(source.to_string()).or_insert(0);
+                        *seen = seen.saturating_add(1);
+                        *seen >= 3
+                    } else {
+                        false
+                    };
+                    if lowconf_seen.len() > 500 {
+                        lowconf_seen.clear();
+                    }
+                    if !promoted {
+                        if dump {
+                            let _ = writeln!(
+                                log_file,
+                                "{} skip reason=lowconf conf={:.2} text={:?}",
+                                stamp(),
+                                line.confidence,
+                                source
+                            );
+                        }
+                        continue;
+                    }
                     if dump {
                         let _ = writeln!(
                             log_file,
-                            "{} skip reason=lowconf conf={:.2} text={:?}",
+                            "{} promote reason=stable conf={:.2} text={:?}",
                             stamp(),
                             line.confidence,
                             source
                         );
                     }
-                    continue;
                 }
                 match script_of(source) {
                     Script::Other => {

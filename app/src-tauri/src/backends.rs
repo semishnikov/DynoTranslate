@@ -30,7 +30,7 @@ pub fn translate_batch(
     settings: &LiveSettings,
 ) -> Result<Vec<String>, String> {
     match backend {
-        "google" => lines.iter().map(|line| google_one(line)).collect(),
+        "google" => google_batch(lines),
         "deepl" => deepl(lines, settings),
         "openai" => openai(lines, context, settings),
         other => Err(format!("unknown translator backend {other:?}")),
@@ -49,6 +49,28 @@ fn url_encode(text: &str) -> String {
         }
     }
     out
+}
+
+/// One request for the whole screen when the engine keeps the line count, so it sees the
+/// lines together; otherwise one thread per line, so a tick costs a single round trip.
+fn google_batch(lines: &[String]) -> Result<Vec<String>, String> {
+    if let Ok(joined) = google_one(&lines.join("\n")) {
+        let parts: Vec<String> = joined.lines().map(|part| part.trim().to_string()).collect();
+        if parts.len() == lines.len() && parts.iter().all(|part| !part.is_empty()) {
+            return Ok(parts);
+        }
+    }
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = lines.iter().map(|line| scope.spawn(move || google_one(line))).collect();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err("google thread panicked".to_string()))
+            })
+            .collect()
+    })
 }
 
 /// The keyless endpoint the open-source screen translators use; fine for short game lines.

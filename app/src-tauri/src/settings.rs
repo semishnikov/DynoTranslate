@@ -38,7 +38,7 @@ impl Default for LiveSettings {
         Self {
             min_confidence: 0.75,
             font_scale: 0.72,
-            max_lines_per_tick: 8,
+            max_lines_per_tick: 12,
             opacity: 1.0,
             context_lines: 6,
             overlay_style: OverlayStyle::Seamless,
