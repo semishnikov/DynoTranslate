@@ -122,6 +122,8 @@ pub struct LivePipeline {
     last_engine_call: Option<Instant>,
     /// Glossary version for memory keying.
     glossary_version: u64,
+    /// Built-in free engine (lazy-initialized).
+    default_engine: Option<GoogleFreeEngine>,
 }
 
 impl LivePipeline {
@@ -140,6 +142,7 @@ impl LivePipeline {
             stats: LiveStats::default(),
             last_engine_call: None,
             glossary_version: 0,
+            default_engine: None,
         }
     }
 
@@ -354,12 +357,16 @@ impl LivePipeline {
 
     /// Convenience: process a frame using a built-in free Google Translate engine.
     /// No API key, no configuration, no payment — works out of the box.
+    /// The engine is created lazily on first call and reused for subsequent frames.
     pub fn process_frame_default(
         &mut self,
         observations: &[Observation],
     ) -> Vec<TranslatedBlock> {
-        let mut engine = GoogleFreeEngine::new();
-        self.process_frame(observations, &mut engine)
+        if self.default_engine.is_none() {
+            self.default_engine = Some(GoogleFreeEngine::new());
+        }
+        let engine = self.default_engine.as_mut().unwrap();
+        self.process_frame(observations, engine)
     }
 
     /// Creates a default engine (free Google Translate via web scraping).
