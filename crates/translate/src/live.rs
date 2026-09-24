@@ -57,12 +57,13 @@ impl Default for LiveConfig {
             source_language: Language::English,
             target_language: Language::Russian,
             stability: StabilityConfig {
-                match_iou: 0.3,
-                agree_frames: 2,
-                forget_misses: 5,
+                match_iou: 0.25,
+                agree_frames: 1,  // Translate immediately on first frame
+                forget_misses: 8, // Keep translations longer when text disappears briefly
+                position_smoothing: 0.85, // Stronger smoothing — no jitter
             },
             max_batch_size: 50,
-            min_batch_interval: Duration::from_millis(100),
+            min_batch_interval: Duration::from_millis(50), // Faster debounce
             memory_capacity: 10_000,
             use_context: true,
             app_id: None,
@@ -211,8 +212,14 @@ impl LivePipeline {
                 self.glossary_version,
             );
             if let Some(record) = self.memory.get(&key) {
+                // Exact memory hit — use immediately, no engine call needed
                 self.tracker
                     .provide_translation(&block.source_text, record.translation.clone());
+                memory_hits += 1;
+            } else if let Some(cached) = self.fuzzy_cache.get(&block.source_text) {
+                // Fuzzy cache hit — close enough to a previous translation
+                self.tracker
+                    .provide_translation(&block.source_text, cached.to_owned());
                 memory_hits += 1;
             } else {
                 uncached.push((*idx, *block));
