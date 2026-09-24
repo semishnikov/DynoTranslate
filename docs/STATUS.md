@@ -292,6 +292,16 @@ OCR input as `frames/NNNN.bmp` (newest eight kept) so a bug report needs no scre
 Verified on `a26cd3f`: CI run 35913186877 green on all four jobs, Release run 35913186879
 uploads `installer-windows` (28,998,836 bytes).
 
+`3877cb2`, from the owner's journal of the M7 build: `group_lines` used to union side-by-side
+bubbles into one wide soup line (its plate erased neighbours and its translation mashed three
+speeches), so boxes are now kept separate and over-wide detector regions are cut at inkless
+probability-map columns; recognition takes 20 regions per tick instead of 12; reads at 0.60+
+that repeat three ticks are promoted past the confidence gate (real text is stable, garbage
+flickers); Google receives the whole screen in one request with a per-line threaded fallback,
+collapsing the 4-5 s sequential batches to about one round trip. Verified on `3877cb2`: CI run
+35963872313 green on all four jobs, Release run 35963872042 uploads `installer-windows`
+(29,018,990 bytes).
+
 ## Next
 
 1. **Owner tries the new installer** from Release run 35890197995 on the same Rick & Morty
