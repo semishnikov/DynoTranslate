@@ -97,6 +97,13 @@ pub struct FittedText {
 /// `measure(text, size)` must shape `text` at `size` and report the widest line and how many
 /// lines the wrap produced. Passing the real shaper in production and a table in tests keeps
 /// the algorithm honest without needing a font file for every edge case.
+///
+/// # Algorithm
+///
+/// Binary search between the floor (80% of preferred) and the preferred size.
+/// At each step, measure the text and check if it fits. If it does, try larger;
+/// if not, try smaller. This converges in ~7 iterations and finds the largest
+/// size that fits, not just the first one that does.
 pub fn fit_text<F>(spec: &TextSpec, measure: F) -> Result<FittedText, FitError>
 where
     F: FnMut(&str, f32) -> (f32, u32),
@@ -118,28 +125,45 @@ where
     let max_width = spec.max_width as f32;
     let max_height = spec.max_height as f32;
 
-    let mut size = preferred;
     let mut measure = measure;
-    // Five-percent steps reach the floor from the preferred size in a handful of iterations;
-    // the cap is a guard against a non-monotonic measure function looping forever.
-    for _ in 0..64 {
-        let line_height = (size * 1.2).ceil().max(1.0);
-        let (widest, lines) = measure(&spec.text, size);
+
+    // Fast path: check if preferred size already fits
+    {
+        let line_height = (preferred * 1.2).ceil().max(1.0);
+        let (widest, lines) = measure(&spec.text, preferred);
         let height = lines as f32 * line_height;
         if widest <= max_width && height <= max_height {
-            return Ok(fitted(size, line_height, false, preferred));
-        }
-        if size <= floor + f32::EPSILON {
-            break;
-        }
-        size = (size * 0.95).max(floor);
-        if size <= floor {
-            size = floor;
+            return Ok(fitted(preferred, line_height, false, preferred));
         }
     }
 
-    let line_height = (size * 1.2).ceil().max(1.0);
-    Ok(fitted(size, line_height, true, preferred))
+    // Binary search between floor and preferred
+    let mut lo = floor;
+    let mut hi = preferred;
+    let mut best_size = floor;
+    let mut best_line_height = (floor * 1.2).ceil().max(1.0);
+
+    for _ in 0..16 {
+        let mid = (lo + hi) * 0.5;
+        let line_height = (mid * 1.2).ceil().max(1.0);
+        let (widest, lines) = measure(&spec.text, mid);
+        let height = lines as f32 * line_height;
+
+        if widest <= max_width && height <= max_height {
+            best_size = mid;
+            best_line_height = line_height;
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+
+        if hi - lo < 0.5 {
+            break;
+        }
+    }
+
+    let at_floor = (best_size - floor).abs() < 0.5;
+    Ok(fitted(best_size, best_line_height, at_floor, preferred))
 }
 
 fn fitted(size: f32, line_height: f32, at_floor: bool, preferred: f32) -> FittedText {
