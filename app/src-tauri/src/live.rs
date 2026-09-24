@@ -299,6 +299,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
     let mut frame_counter: u32 = 0;
     let (async_tx, async_rx) = std::sync::mpsc::channel::<(String, String)>();
     let mut dispatch_busy = false;
+    let mut plates: HashMap<String, Plate> = HashMap::new();
     let mut last_sig: Vec<u8> = Vec::new();
     let mut last_hwnd = 0isize;
     let mut quiet_until = Instant::now();
@@ -495,6 +496,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 rect: Rect,
                 parts: Vec<String>,
                 conf: f32,
+                line_h: u32,
             }
             let mut bubbles: Vec<Bubble> = Vec::new();
             for line in lines {
@@ -526,7 +528,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     }
                     continue;
                 }
-                if line.confidence < settings.min_confidence {
+                if line.confidence < settings.min_confidence.min(0.55) {
                     if dump {
                         let _ = writeln!(
                             log_file,
@@ -566,13 +568,16 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                         last.rect = last.rect.union(&rect);
                         last.parts.push(cleaned);
                         last.conf = last.conf.max(line.confidence);
+                        last.line_h = (last.line_h + rect.height) / 2;
                         continue;
                     }
                 }
+                let line_h = rect.height;
                 bubbles.push(Bubble {
                     rect,
                     parts: vec![cleaned],
                     conf: line.confidence,
+                    line_h,
                 });
             }
             if dump {
@@ -667,44 +672,69 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 cache.clear();
             }
 
+            // A translation becomes a persistent plate: it follows its source text with
+            // interpolation and lives a moment after the source flickers out, so the overlay
+            // glides with the picture instead of snapping and blinking.
+            let now = Instant::now();
             for bubble in &bubbles {
                 let key = clip(&bubble.parts.join(" "), 400);
                 let Some(translated) = cache.get(&key) else {
                     pending = true;
                     continue;
                 };
-                let score = translated.chars().count();
+                match plates.get_mut(&key) {
+                    Some(plate) => {
+                        plate.target = bubble.rect;
+                        plate.line_h = bubble.line_h;
+                        plate.conf = bubble.conf;
+                        plate.seen = now;
+                    }
+                    None => {
+                        let (background, foreground) = plate_colors(&frame, &bubble.rect);
+                        plates.insert(
+                            key,
+                            Plate {
+                                text: translated.clone(),
+                                target: bubble.rect,
+                                drawn: bubble.rect,
+                                line_h: bubble.line_h,
+                                conf: bubble.conf,
+                                background,
+                                foreground,
+                                seen: now,
+                            },
+                        );
+                    }
+                }
+            }
+            plates.retain(|_, plate| now.duration_since(plate.seen) < Duration::from_millis(900));
+            for plate in plates.values_mut() {
+                plate.drawn = lerp_rect(&plate.drawn, &plate.target, 0.35);
+                let score = plate.text.chars().count();
                 if score > sample_score {
                     sample_score = score;
-                    sample = format!("{} → {}", clip(&key, 120), clip(translated, 120));
+                    sample = clip(&plate.text, 120);
                 }
-                let size = (bubble.rect.height as f32 * settings.font_scale).clamp(12.0, 42.0) as u32;
-                let (background, foreground) = plate_colors(&frame, &bubble.rect);
+                let size = (plate.line_h as f32 * settings.font_scale).clamp(12.0, 32.0) as u32;
                 if dump {
-                    let r = bubble.rect;
+                    let r = plate.drawn;
                     let _ = writeln!(
                         log_file,
-                        "{} plate rect=({},{},{}x{}) font={} bg=[{},{},{}] fg=[{},{},{}] text={:?}",
+                        "{} plate rect=({},{},{}x{}) font={} text={:?}",
                         stamp(),
                         r.x,
                         r.y,
                         r.width,
                         r.height,
                         size,
-                        background[0],
-                        background[1],
-                        background[2],
-                        foreground[0],
-                        foreground[1],
-                        foreground[2],
-                        translated
+                        plate.text
                     );
                 }
                 blocks.push(
-                    OverlayBlock::new(bubble.rect, translated.clone())
+                    OverlayBlock::new(plate.drawn, plate.text.clone())
                         .with_font(size, FontWeight::Regular, false)
-                        .with_colors(background, foreground)
-                        .with_confidence(bubble.conf),
+                        .with_colors(plate.background, plate.foreground)
+                        .with_confidence(plate.conf),
                 );
             }
 
@@ -1015,9 +1045,30 @@ fn clean_line(text: &str) -> String {
     words.join(" ")
 }
 
+struct Plate {
+    text: String,
+    target: Rect,
+    drawn: Rect,
+    line_h: u32,
+    conf: f32,
+    background: [u8; 4],
+    foreground: [u8; 4],
+    seen: Instant,
+}
+
+fn lerp_rect(from: &Rect, to: &Rect, t: f32) -> Rect {
+    let mix = |a: f32, b: f32| (a + (b - a) * t).round();
+    Rect::new(
+        mix(from.x as f32, to.x as f32) as i32,
+        mix(from.y as f32, to.y as f32) as i32,
+        mix(from.width as f32, to.width as f32) as u32,
+        mix(from.height as f32, to.height as f32) as u32,
+    )
+}
+
 /// Browser chrome arrives as case-flipping Latin transliteration ("veppyHuTOxnLEx+",
 /// "YHH4TOKHR"); living English never does. A line is skipped when a third of its words
-/// flip case twice or more, carry a digit inside, or run longer than any real word.
+/// flip case twice or more or carry a digit inside.
 fn chaotic(text: &str) -> bool {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
@@ -1039,7 +1090,9 @@ fn chaotic_word(word: &str) -> bool {
         }
     }
     let digit_inside = word.len() >= 5 && word.chars().any(|ch| ch.is_ascii_digit());
-    switches >= 2 || digit_inside || chars.len() > 18
+    // No length rule: the recogniser glues small subtitle words into one long token
+    // ("NOBODYLIKESITDARKER"); that is real text and must reach the translator.
+    switches >= 2 || digit_inside
 }
 
 fn clip(text: &str, limit: usize) -> String {
@@ -1448,6 +1501,25 @@ mod tests {
     fn a_decimal_is_not_a_sentence_break() {
         let parts = sentence_pieces("Damage 1.5");
         assert_eq!(parts, vec!["Damage 1.5"]);
+    }
+
+    #[test]
+    fn glued_subtitle_words_are_not_chaos() {
+        // The recogniser glues small subtitle words together; the length rule used to
+        // throw these real lines away and the owner counted it as "translates only half".
+        assert!(!super::chaotic("NOBODYLIKESITDARKER"));
+        assert!(!super::chaotic("LKEEPTHINGSTICKINGALONG."));
+        assert!(super::chaotic("veppyHuTOxnLEx+"));
+    }
+
+    #[test]
+    fn plates_glide_towards_their_source() {
+        let from = lumen_core::Rect::new(0, 0, 100, 20);
+        let to = lumen_core::Rect::new(40, 20, 120, 24);
+        let mid = super::lerp_rect(&from, &to, 0.5);
+        assert_eq!((mid.x, mid.y, mid.width, mid.height), (20, 10, 110, 22));
+        let end = super::lerp_rect(&from, &to, 1.0);
+        assert_eq!(end, to);
     }
 
     #[test]

@@ -132,7 +132,7 @@ impl Reader {
     fn recognize_lines(&mut self, frame: &Frame, lines: &[Rect]) -> Result<Vec<Recognition>, String> {
         let mut found = Vec::new();
         let mut last_error = None;
-        for line in lines.iter().take(20) {
+        for line in lines.iter().take(36) {
             let Some(crop) = frame.crop(*line) else {
                 continue;
             };
@@ -217,7 +217,7 @@ impl Reader {
     }
 
     fn recognize_crop(&mut self, crop: &Frame) -> Result<(String, f32), String> {
-        let natural = ((48.0 * crop.width() as f32 / crop.height() as f32).ceil() as u32).clamp(8, 960);
+        let natural = ((48.0 * crop.width() as f32 / crop.height() as f32).ceil() as u32).clamp(8, 720);
         let aligned = natural.div_ceil(8) * 8;
         if let Some(fixed) = self.rec_width {
             return self.recognize_at(crop, natural.min(fixed), fixed);
