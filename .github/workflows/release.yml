@@ -38,23 +38,15 @@ jobs:
         run: npm run build
         working-directory: app
 
-      - name: Build Rust backend
-        run: cargo build --release --workspace --exclude lumen-shell
-
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0" --locked
 
-      - name: Build Tauri app
-        run: cargo tauri build --ci --no-bundle
+      - name: Build Tauri app and installer
+        run: cargo tauri build --ci
         working-directory: src-tauri
-
-      - name: Build MSI installer
-        run: cargo tauri build --ci --bundles msi
-        working-directory: src-tauri
-
-      - name: Build NSIS installer
-        run: cargo tauri build --ci --bundles nsis
-        working-directory: src-tauri
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -120,17 +112,10 @@ jobs:
         run: npm run build
         working-directory: app
 
-      - name: Build Rust backend
-        run: cargo build --release --workspace --exclude lumen-shell
-
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0" --locked
 
-      - name: Build Tauri app
-        run: cargo tauri build --ci --no-bundle
-        working-directory: src-tauri
-
-      - name: Build deb package
+      - name: Build Tauri app + deb package
         run: cargo tauri build --ci --bundles deb
         working-directory: src-tauri
 
