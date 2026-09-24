@@ -26,6 +26,9 @@ pub struct StabilityConfig {
     pub agree_frames: usize,
     /// Misses tolerated before a track is forgotten.
     pub forget_misses: usize,
+    /// Position smoothing factor (0.0 = no smoothing, 1.0 = freeze at first position).
+    /// Lower values make the overlay follow the source more tightly; higher values reduce jitter.
+    pub position_smoothing: f32,
 }
 
 impl Default for StabilityConfig {
@@ -34,6 +37,7 @@ impl Default for StabilityConfig {
             match_iou: 0.3,
             agree_frames: 2,
             forget_misses: 3,
+            position_smoothing: 0.7,
         }
     }
 }
@@ -51,6 +55,8 @@ pub struct Observation {
 pub struct StableBlock {
     /// Latest matched box, so a tooltip that drifts a pixel follows the source.
     pub rect: Rect,
+    /// Smoothed display position — reduces jitter by blending toward the raw rect.
+    pub display_rect: Rect,
     /// The reading every agree_frames vote has settled on.
     pub source_text: String,
     /// Whether the source is digits and punctuation only; never translate those.
@@ -68,6 +74,8 @@ pub struct StableBlock {
     pub misses: usize,
     /// Lowest confidence among the recent observations, for the plate fallback.
     pub confidence: f32,
+    /// Unique track ID, stable across frames.
+    pub track_id: u64,
 }
 
 impl StableBlock {
@@ -104,6 +112,7 @@ pub fn is_numeric_only(text: &str) -> bool {
 #[derive(Debug, Default)]
 pub struct StabilityTracker {
     tracks: Vec<StableBlock>,
+    next_track_id: u64,
 }
 
 impl StabilityTracker {
@@ -147,8 +156,11 @@ impl StabilityTracker {
         for (oi, is_taken) in taken.iter().enumerate() {
             if !is_taken {
                 let observation = &observations[oi];
+                let track_id = self.next_track_id;
+                self.next_track_id += 1;
                 self.tracks.push(StableBlock {
                     rect: observation.rect,
+                    display_rect: observation.rect,
                     source_text: observation.text.clone(),
                     numeric_only: is_numeric_only(&observation.text),
                     candidate: None,
@@ -157,6 +169,7 @@ impl StabilityTracker {
                     translated_source: None,
                     misses: 0,
                     confidence: observation.confidence,
+                    track_id,
                 });
             }
         }
@@ -174,6 +187,17 @@ impl StabilityTracker {
     fn fold(&mut self, index: usize, observation: &Observation, config: &StabilityConfig) {
         let track = &mut self.tracks[index];
         track.misses = 0;
+        
+        // Apply position smoothing: blend old display_rect toward new observation
+        let alpha = 1.0 - config.position_smoothing.clamp(0.0, 0.95);
+        let old = track.display_rect;
+        let new = observation.rect;
+        track.display_rect = Rect::new(
+            (old.x as f32 * (1.0 - alpha) + new.x as f32 * alpha).round() as i32,
+            (old.y as f32 * (1.0 - alpha) + new.y as f32 * alpha).round() as i32,
+            (old.width as f32 * (1.0 - alpha) + new.width as f32 * alpha).round() as u32,
+            (old.height as f32 * (1.0 - alpha) + new.height as f32 * alpha).round() as u32,
+        );
         track.rect = observation.rect;
         track.confidence = track.confidence.min(observation.confidence);
 

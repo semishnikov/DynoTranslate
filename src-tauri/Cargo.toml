@@ -6,10 +6,6 @@ description = "Tauri host for the Lumen interface: tray, global shortcuts and th
 license = "Apache-2.0"
 publish = false
 
-# Deliberately not a workspace member: the CI toolchain has no WebKit/GTK packages and
-# cannot be changed without the workflows permission (docs/WORKFLOW.md). Build this on a
-# desktop machine with `cargo tauri build` from the repository root tooling.
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -18,6 +14,9 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+lumen-core = { version = "0.1.0", path = "../crates/core" }
+lumen-stability = { version = "0.1.0", path = "../crates/stability" }
+lumen-translate = { version = "0.1.0", path = "../crates/translate" }
 
 [features]
 default = ["custom-protocol"]

@@ -12,12 +12,14 @@
 //! the same pixels. Matching therefore picks among the bundled faces by weight and style; there
 //! is no family name to match against, because recognition never reports one.
 
+pub mod composite;
 pub mod fit;
 pub mod fonts;
 pub mod inpaint;
 pub mod text;
 pub mod writing;
 
+pub use composite::{composite, CompositeBlock, CompositeConfig, CompositeResult};
 pub use fit::{fit_text, FitError, FittedText, TextSpec};
 pub use fonts::{FontLibrary, FontLibraryError};
 pub use inpaint::{erase, inpaint};

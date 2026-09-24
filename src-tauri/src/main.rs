@@ -7,6 +7,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::sync::Mutex;
+
 use serde::{Deserialize, Serialize};
 
 /// Mirror of the React `RegionRect` (percent of the window).
@@ -42,19 +44,71 @@ impl Default for ShellSettings {
     }
 }
 
+/// One translated block returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslatedBlockDto {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub source_text: String,
+    pub display_text: String,
+    pub confidence: f32,
+    pub is_new: bool,
+}
+
+/// One OCR observation submitted from the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObservationDto {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub text: String,
+    pub confidence: f32,
+}
+
+/// Pipeline statistics for the frontend dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineStatsDto {
+    pub frames: u64,
+    pub blocks: u64,
+    pub engine_calls: u64,
+    pub items_translated: u64,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+    pub engine_time_ms: u64,
+    pub last_frame_ms: u64,
+}
+
+/// The shared pipeline state.
+struct PipelineState {
+    pipeline: lumen_translate::LivePipeline,
+    engine: lumen_translate::GoogleFreeEngine,
+}
+
+impl PipelineState {
+    fn new() -> Self {
+        Self {
+            pipeline: lumen_translate::LivePipeline::new(lumen_translate::LiveConfig::default()),
+            engine: lumen_translate::GoogleFreeEngine::new(),
+        }
+    }
+}
+
 #[tauri::command]
 fn ping() -> String {
     "pong".to_string()
 }
 
 #[tauri::command]
-fn get_shell_settings(state: tauri::State<'_, std::sync::Mutex<ShellSettings>>) -> ShellSettings {
+fn get_shell_settings(state: tauri::State<'_, Mutex<ShellSettings>>) -> ShellSettings {
     state.lock().expect("shell settings").clone()
 }
 
 #[tauri::command]
 fn set_shell_settings(
-    state: tauri::State<'_, std::sync::Mutex<ShellSettings>>,
+    state: tauri::State<'_, Mutex<ShellSettings>>,
     settings: ShellSettings,
 ) -> ShellSettings {
     let mut current = state.lock().expect("shell settings");
@@ -65,11 +119,78 @@ fn set_shell_settings(
     current.clone()
 }
 
+/// Process a frame of observations and return translated blocks.
+#[tauri::command]
+fn translate_frame(
+    state: tauri::State<'_, Mutex<PipelineState>>,
+    observations: Vec<ObservationDto>,
+) -> Vec<TranslatedBlockDto> {
+    let mut state = state.lock().expect("pipeline state");
+
+    let obs: Vec<lumen_stability::Observation> = observations
+        .iter()
+        .map(|o| lumen_stability::Observation {
+            rect: lumen_core::Rect::new(o.x, o.y, o.width, o.height),
+            text: o.text.clone(),
+            confidence: o.confidence,
+        })
+        .collect();
+
+    let blocks = state.pipeline.process_frame(&obs, &mut state.engine);
+
+    blocks
+        .iter()
+        .map(|b| TranslatedBlockDto {
+            x: b.rect.x,
+            y: b.rect.y,
+            width: b.rect.width,
+            height: b.rect.height,
+            source_text: b.source_text.clone(),
+            display_text: b.display_text.clone(),
+            confidence: b.confidence,
+            is_new: b.is_new,
+        })
+        .collect()
+}
+
+/// Get current pipeline statistics.
+#[tauri::command]
+fn get_pipeline_stats(state: tauri::State<'_, Mutex<PipelineState>>) -> PipelineStatsDto {
+    let state = state.lock().expect("pipeline state");
+    let stats = state.pipeline.stats();
+    PipelineStatsDto {
+        frames: stats.frames,
+        blocks: stats.blocks,
+        engine_calls: stats.engine_calls,
+        items_translated: stats.items_translated,
+        cache_hits: stats.cache_hits,
+        cache_misses: stats.cache_misses,
+        engine_time_ms: stats.engine_time_ms,
+        last_frame_ms: stats.last_frame_ms,
+    }
+}
+
+/// Clear the translation cache.
+#[tauri::command]
+fn clear_cache(state: tauri::State<'_, Mutex<PipelineState>>) {
+    let mut state = state.lock().expect("pipeline state");
+    state.pipeline.clear_cache();
+    state.pipeline.reset_tracking();
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(std::sync::Mutex::new(ShellSettings::default()))
-        .invoke_handler(tauri::generate_handler![ping, get_shell_settings, set_shell_settings])
+        .manage(Mutex::new(ShellSettings::default()))
+        .manage(Mutex::new(PipelineState::new()))
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            get_shell_settings,
+            set_shell_settings,
+            translate_frame,
+            get_pipeline_stats,
+            clear_cache,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Lumen shell");
 }
