@@ -1276,11 +1276,12 @@ fn read_bands(
             Err(error) => {
                 let _ = writeln!(
                     log_file,
-                    "{} ocr region ({},{})x{}: {}",
+                    "{} ocr region ({},{})x{} after {}ms: {}",
                     stamp(),
                     region.x,
                     region.y,
                     region.height,
+                    spent,
                     error
                 );
             }
@@ -1297,15 +1298,6 @@ fn read_bands(
     for state in bands.iter() {
         lines.extend(state.lines.iter().cloned());
     }
-    let _ = writeln!(
-        log_file,
-        "{} ocr bands={}/{} ms={} lines={}",
-        stamp(),
-        read_count,
-        BANDS,
-        spent,
-        lines.len()
-    );
     (lines, read_count)
 }
 
