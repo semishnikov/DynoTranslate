@@ -25,7 +25,6 @@ use crate::model::Translator;
 use crate::readtext::{dark_bars, Reader};
 use crate::settings::LiveSettingsHandle;
 
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
     pub phase: String,
