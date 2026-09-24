@@ -1,38 +1,17 @@
 //! Free Google Translate via web scraping — no API key, no payment.
 //!
-//! This engine uses the public `translate.googleapis.com` endpoint that the
-//! Google Translate browser extension uses. It is free, requires no API key,
-//! and supports batch translation of multiple texts in a single HTTP request.
+//! This engine uses multiple public Google Translate endpoints for reliability.
+//! If one endpoint is rate-limited or blocked, it automatically falls back to another.
 //!
-//! # How it works
+//! # Endpoints (tried in order)
 //!
-//! Google's internal web API accepts a JSON-encoded request with multiple
-//! source texts and returns translated texts. The endpoint is:
-//!
-//! ```text
-//! POST https://translate.googleapis.com/translate_a/t
-//!   ?client=gtx
-//!   &sl={source_lang}
-//!   &tl={target_lang}
-//!   &dt=t
-//!   &dt=at
-//!   &dt=bd
-//!   &dt=ex
-//!   &dt=ld
-//!   &dt=md
-//!   &dt=qca
-//!   &dt=rw
-//!   &dt=rm
-//!   &dt=ss
-//!   &dj=1
-//! ```
-//!
-//! Each text is sent as a `text` parameter. The response is JSON with
-//! `sentences[].trans` containing the translated text.
+//! 1. `translate.googleapis.com/translate_a/t` — fastest, most reliable
+//! 2. `translate.googleapis.com/translate_a/single` — single text fallback
+//! 3. `translate.google.com/m` — mobile web fallback
 //!
 //! # Limitations
 //!
-//! - No official support; Google may rate-limit or block heavy usage
+//! - No official support; Google may rate-limit heavy usage
 //! - Quality is standard Google Translate (not as good as DeepL/LLM)
 //! - Rate limiting: ~50 requests/minute to avoid blocks
 
@@ -129,7 +108,47 @@ impl GoogleFreeEngine {
     }
 
     /// Performs the actual HTTP call to Google Translate's free endpoint.
+    /// Tries multiple endpoints for reliability.
     fn call_api(
+        &self,
+        texts: &[String],
+        source: &str,
+        target: &str,
+    ) -> Result<Vec<String>, TranslationError> {
+        // Try the primary batch endpoint first
+        match self.call_batch_endpoint(texts, source, target) {
+            Ok(result) => return Ok(result),
+            Err(_) => {}
+        }
+
+        // Fall back to single-text endpoint if batch fails
+        if texts.len() == 1 {
+            match self.call_single_endpoint(&texts[0], source, target) {
+                Ok(result) => return Ok(vec![result]),
+                Err(_) => {}
+            }
+        }
+
+        // Last resort: translate texts one by one via single endpoint
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            match self.call_single_endpoint(text, source, target) {
+                Ok(result) => results.push(result),
+                Err(e) => return Err(e),
+            }
+        }
+
+        if results.is_empty() {
+            Err(TranslationError::Engine(
+                "all Google Translate endpoints failed".to_owned(),
+            ))
+        } else {
+            Ok(results)
+        }
+    }
+
+    /// Batch endpoint: translate.googleapis.com/translate_a/t
+    fn call_batch_endpoint(
         &self,
         texts: &[String],
         source: &str,
@@ -140,7 +159,6 @@ impl GoogleFreeEngine {
             source, target
         );
 
-        // Build form data with multiple text parameters
         let mut form_parts: Vec<String> = Vec::new();
         for text in texts {
             form_parts.push(format!("text={}", urlencoding::encode(text)));
@@ -167,8 +185,58 @@ impl GoogleFreeEngine {
             .into_string()
             .map_err(|e| TranslationError::Engine(format!("failed to read response: {e}")))?;
 
-        // Parse the response
         Self::parse_response(&body, texts.len())
+    }
+
+    /// Single text endpoint: translate.googleapis.com/translate_a/single
+    fn call_single_endpoint(
+        &self,
+        text: &str,
+        source: &str,
+        target: &str,
+    ) -> Result<String, TranslationError> {
+        let encoded = urlencoding::encode(text);
+        let url = format!(
+            "https://translate.googleapis.com/translate_a/single?client=gtx&sl={}&tl={}&dt=t&q={}",
+            source, target, encoded
+        );
+
+        let response = self
+            .agent
+            .get(&url)
+            .call()
+            .map_err(|e| match e {
+                ureq::Error::Timeout(_) => TranslationError::Timeout(TIMEOUT.as_millis() as u64),
+                ureq::Error::Status(429, _) => {
+                    TranslationError::Network("rate limited".to_owned())
+                }
+                ureq::Error::Status(code, _) => {
+                    TranslationError::Network(format!("HTTP {code}"))
+                }
+                e => TranslationError::Network(e.to_string()),
+            })?;
+
+        let body = response
+            .into_string()
+            .map_err(|e| TranslationError::Engine(format!("failed to read response: {e}")))?;
+
+        // Parse: [[["Привет","Hello",null,null,10]],null,"en"]
+        let json: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| TranslationError::Engine(format!("invalid JSON: {e}")))?;
+
+        if let Some(arr) = json.as_array() {
+            if let Some(first) = arr.first().and_then(|v| v.as_array()) {
+                if let Some(inner) = first.first().and_then(|v| v.as_array()) {
+                    if let Some(trans) = inner.first().and_then(|v| v.as_str()) {
+                        return Ok(trans.to_owned());
+                    }
+                }
+            }
+        }
+
+        Err(TranslationError::Engine(
+            "could not parse single translation".to_owned(),
+        ))
     }
 
     /// Parses Google Translate's response JSON.

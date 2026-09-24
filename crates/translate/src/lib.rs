@@ -33,6 +33,8 @@ pub mod live;
 pub mod llm;
 pub mod memory;
 pub mod packs;
+pub mod postprocess;
+pub mod preprocess;
 pub mod token;
 
 pub use context::{ContextTurn, DialogueContext};
@@ -50,4 +52,6 @@ pub use live::{LiveConfig, LivePipeline, LiveStats, TranslatedBlock};
 pub use llm::{LlmConfig, LlmEngine, LlmProvider};
 pub use memory::{MemoryKey, MemoryRecord, MemoryStats, TranslationMemory};
 pub use packs::{ModelPackInfo, PackManager, PackStatus};
+pub use postprocess::{estimate_max_chars, postprocess};
+pub use preprocess::{detect_language, is_sound_effect, preprocess_ocr};
 pub use token::{normalize, protect, restore, ProtectedToken, TokenKind};

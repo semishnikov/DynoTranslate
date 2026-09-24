@@ -245,13 +245,17 @@ impl LivePipeline {
         uncached: &[(usize, &StableBlock)],
         engine: &mut dyn TranslationEngine,
     ) {
+        // Apply OCR pre-processing to improve translation quality
         let items: Vec<TranslateItem> = uncached
             .iter()
             .enumerate()
-            .map(|(i, (_, block))| TranslateItem {
-                id: i,
-                text: block.source_text.clone(),
-                kind: None, // Layout classification would be attached here
+            .map(|(i, (_, block))| {
+                let cleaned = crate::preprocess::preprocess_ocr(&block.source_text);
+                TranslateItem {
+                    id: i,
+                    text: cleaned,
+                    kind: None,
+                }
             })
             .collect();
 
@@ -284,6 +288,9 @@ impl LivePipeline {
                 for translated in &response.items {
                     let source = &uncached[translated.id].1.source_text;
 
+                    // Apply post-processing for display quality
+                    let final_text = crate::postprocess::postprocess(&translated.translated, None);
+
                     // Store in memory for future lookups
                     self.memory.insert(
                         MemoryKey::new(
@@ -292,24 +299,24 @@ impl LivePipeline {
                             self.config.target_language,
                             self.glossary_version,
                         ),
-                        translated.translated.clone(),
+                        final_text.clone(),
                         &format!("{:?}", response.engine),
                         translated.confidence,
                     );
 
                     // Store in fuzzy cache for near-match lookups (OCR variants)
-                    self.fuzzy_cache.insert(source.clone(), translated.translated.clone());
+                    self.fuzzy_cache.insert(source.clone(), final_text.clone());
 
                     // Attach to the stability tracker
                     self.tracker
-                        .provide_translation(source, translated.translated.clone());
+                        .provide_translation(source, final_text.clone());
 
                     // Update dialogue context for narrative continuity
                     if source.len() > 3 {
                         self.context.push(
                             None,
                             source,
-                            Some(&translated.translated),
+                            Some(&final_text),
                         );
                     }
                 }
