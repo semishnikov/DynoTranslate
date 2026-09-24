@@ -1090,9 +1090,8 @@ fn merge_bubbles(mut lines: Vec<(Rect, String, f32)>) -> Vec<Bubble> {
             if gap > (height / 3).max(8) || gap < -(height * 2 / 5) {
                 continue;
             }
-            let overlap = (bubble.rect.x + bubble.rect.width as i32)
-                .min(rect.x + rect.width as i32)
-                - bubble.rect.x.max(rect.x);
+            let overlap =
+                (bubble.rect.x + bubble.rect.width as i32).min(rect.x + rect.width as i32) - bubble.rect.x.max(rect.x);
             let narrower = bubble.rect.width.min(rect.width) as i32;
             if overlap * 4 < narrower {
                 continue;
