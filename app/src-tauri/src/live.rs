@@ -25,7 +25,6 @@ use crate::model::Translator;
 use crate::readtext::{dark_bars, Reader};
 use crate::settings::LiveSettingsHandle;
 
-const MAX_OCR_WIDTH: u32 = 1280;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LiveStatus {
@@ -391,9 +390,9 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 publish(&control, &app, looking);
             }
 
-            // The preview and the saved frames keep the small copy; recognition reads the
-            // picture at its own size, because squeezing it is what glued words together.
-            let (small, _scale) = downscale(&frame);
+            // Recognition reads the picture at its own size: squeezing it is what glued words
+            // together. The preview and the saved frames are scaled on their way out instead.
+
             let ocr_started = Instant::now();
             let (lines, bands_read) = read_bands(&mut reader, &frame, &mut bands, &mut log_file);
             if bands_read == 0 && lines.is_empty() && !held.is_empty() {
@@ -1209,16 +1208,16 @@ fn read_bands(
     };
     let mut changed = vec![false; BANDS as usize];
     let mut fresh: Vec<Vec<u8>> = Vec::with_capacity(BANDS as usize);
-    for index in 0..BANDS as usize {
+    for (index, moved) in changed.iter_mut().enumerate() {
         let (top, bottom) = bounds_of(index);
         let sig = band_sig(frame, top, bottom);
-        changed[index] = !picture_same(&bands[index].sig, &sig);
+        *moved = !picture_same(&bands[index].sig, &sig);
         fresh.push(sig);
     }
     // Neighbouring changes become one reading, with a band of slack on each side.
     let mut regions: Vec<(usize, usize)> = Vec::new();
-    for index in 0..BANDS as usize {
-        if !changed[index] {
+    for (index, moved) in changed.iter().enumerate() {
+        if !moved {
             continue;
         }
         let start = index.saturating_sub(1);
@@ -1270,8 +1269,8 @@ fn read_bands(
                     }
                     found[owner].push(line);
                 }
-                for index in start..=end {
-                    dirty[index] = true;
+                for slot in dirty.iter_mut().take(end + 1).skip(start) {
+                    *slot = true;
                 }
                 read_count += (end - start + 1) as u32;
             }
@@ -1697,27 +1696,6 @@ fn clear(overlay: &mut Option<LayeredOverlay>) {
     if let Some(surface) = overlay.as_mut() {
         let _ = surface.clear();
     }
-}
-
-fn downscale(frame: &Frame) -> (Frame, f32) {
-    if frame.width() == 0 || frame.height() == 0 || frame.width() <= MAX_OCR_WIDTH {
-        return (frame.clone(), 1.0);
-    }
-    let scale = frame.width() as f32 / MAX_OCR_WIDTH as f32;
-    let width = MAX_OCR_WIDTH;
-    let height = ((frame.height() as f32 / scale).round() as u32).max(1);
-    let mut pixels = vec![0u8; width as usize * height as usize * 4];
-    for y in 0..height {
-        let source_y = ((y as f32 * scale) as u32).min(frame.height() - 1);
-        for x in 0..width {
-            let source_x = ((x as f32 * scale) as u32).min(frame.width() - 1);
-            let pixel = frame.pixel(source_x, source_y);
-            let offset = (y as usize * width as usize + x as usize) * 4;
-            pixels[offset..offset + 4].copy_from_slice(&pixel);
-        }
-    }
-    let small = Frame::packed(width, height, pixels).unwrap_or_else(|_| frame.clone());
-    (small, scale)
 }
 
 fn picture_sig(frame: &Frame) -> Vec<u8> {
