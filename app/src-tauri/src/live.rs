@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use lumen_capture::{capture_window_picture, capture_window_screen, enumerate_targets};
 use lumen_core::{Frame, Rect};
+use lumen_ocr::Recognition;
 use lumen_overlay::windows::LayeredOverlay;
 use lumen_overlay::{Compositor, OverlayBlock, OverlayLayout, OverlaySurface};
 use lumen_render::FontWeight;
@@ -21,7 +22,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::backends;
 use crate::model::Translator;
-use crate::readtext::Reader;
+use crate::readtext::{dark_bars, Reader};
 use crate::settings::LiveSettingsHandle;
 
 const MAX_OCR_WIDTH: u32 = 1280;
@@ -292,7 +293,9 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
         }
     };
     let mut overlay: Option<LayeredOverlay> = None;
-    let mut cache: HashMap<String, String> = HashMap::new();
+    let mut cache: HashMap<String, String> = load_memory();
+    let mut saved_entries = cache.len();
+    let mut bands: Vec<BandState> = Vec::new();
     // Recent source/translation pairs; the LLM backends read it for coherence.
     let mut context: VecDeque<(String, String)> = VecDeque::new();
     let mut last_settings_json = String::new();
@@ -364,6 +367,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
             if hwnd != last_hwnd {
                 held.clear();
                 last_sig.clear();
+                bands.clear();
             }
             let stable = hwnd == last_hwnd && picture_same(&last_sig, &sig);
             if stable && Instant::now() < quiet_until {
@@ -387,30 +391,16 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 publish(&control, &app, looking);
             }
 
-            let (small, scale) = downscale(&frame);
+            // The preview and the saved frames keep the small copy; recognition reads the
+            // picture at its own size, because squeezing it is what glued words together.
+            let (small, _scale) = downscale(&frame);
             let ocr_started = Instant::now();
-            let lines = match reader.read(&small) {
-                Ok(lines) => lines,
-                Err(error) => {
-                    log_once(&mut log_file, &mut last_log, &format!("ocr: {error}"));
-                    if !held.is_empty() {
-                        quiet_until = Instant::now() + Duration::from_millis(800);
-                        std::thread::sleep(Duration::from_millis(200));
-                        continue;
-                    }
-                    clear(&mut overlay);
-                    let mut status = view(
-                        "error",
-                        "Не могу прочитать текст",
-                        &format!("Своё распознавание сбилось. Пробую ещё раз. {}", clip(&error, 90)),
-                    );
-                    status.watched = name;
-                    status.capture = method.to_owned();
-                    publish(&control, &app, status);
-                    std::thread::sleep(Duration::from_millis(400));
-                    continue;
-                }
-            };
+            let (lines, bands_read) = read_bands(&mut reader, &frame, &mut bands, &mut log_file);
+            if bands_read == 0 && lines.is_empty() && !held.is_empty() {
+                quiet_until = Instant::now() + Duration::from_millis(800);
+                std::thread::sleep(Duration::from_millis(200));
+                continue;
+            }
 
             let settings = settings.read().expect("live settings").clone();
             let settings_json = serde_json::to_string(&settings).unwrap_or_default();
@@ -425,15 +415,17 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     dispatch_busy = false;
                     continue;
                 }
+                let echo = echo_of_source(&key, &value);
                 let _ = writeln!(
                     log_file,
-                    "{} async backend={} {:?} -> {:?}",
+                    "{} async backend={} echo={} {:?} -> {:?}",
                     stamp(),
                     settings.translator,
+                    echo,
                     key,
                     value
                 );
-                cache.insert(key, value);
+                cache.insert(key, if echo { String::new() } else { value });
             }
             let mut pending = false;
             let mut blocks = Vec::new();
@@ -454,12 +446,14 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                 last_scene_key = scene_key;
                 let _ = writeln!(
                     log_file,
-                    "{} tick window={:?} frame={}x{} ocr={}ms lines={} style={:?} backend={} minconf={:.2}",
+                    "{} tick window={:?} frame={}x{} ocr={}ms bands={}/{} lines={} style={:?} backend={} minconf={:.2}",
                     stamp(),
                     name,
                     frame.width(),
                     frame.height(),
                     ocr_started.elapsed().as_millis(),
+                    bands_read,
+                    BANDS,
                     lines.len(),
                     settings.overlay_style,
                     settings.translator,
@@ -479,7 +473,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                         line.text
                     );
                 }
-                if let Some(path) = save_frame(&small, &mut frame_counter) {
+                if let Some(path) = save_frame(&frame, &mut frame_counter) {
                     let _ = writeln!(
                         log_file,
                         "{} frame saved {:?} (exactly what OCR saw; attach it instead of a screenshot)",
@@ -492,13 +486,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
             // A bubble is the unit of meaning: stacked lines with overlapping columns are one
             // speech, translated together and covered by one plate. Translating line fragments
             // separately is exactly what produced the word salad the owner rejected.
-            struct Bubble {
-                rect: Rect,
-                parts: Vec<String>,
-                conf: f32,
-                line_h: u32,
-            }
-            let mut bubbles: Vec<Bubble> = Vec::new();
+            let mut candidates: Vec<(Rect, String, f32)> = Vec::new();
             for line in lines {
                 let source = line.text.trim();
                 if source.chars().all(|ch| !ch.is_alphabetic()) {
@@ -552,34 +540,23 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     Script::None => continue,
                     Script::Latin => saw_latin = true,
                 }
-                let rect = scale_rect(line.bounds, scale, frame.width(), frame.height());
+                let rect = line.bounds.clamp_to(&frame.bounds()).unwrap_or(line.bounds);
                 if rect.height < 8 || rect.width < 8 {
+                    continue;
+                }
+                if stray_token(source) || chrome_line(source) {
+                    if dump {
+                        let _ = writeln!(log_file, "{} skip reason=stray text={:?}", stamp(), source);
+                    }
                     continue;
                 }
                 let cleaned = clean_line(source);
                 if cleaned.is_empty() {
                     continue;
                 }
-                if let Some(last) = bubbles.last_mut() {
-                    let gap = rect.y - last.rect.bottom();
-                    let x_overlap = (last.rect.x + last.rect.width as i32).min(rect.x + rect.width as i32)
-                        - last.rect.x.max(rect.x);
-                    if x_overlap > 0 && (-2..=(last.rect.height as i32 / 4).max(6)).contains(&gap) {
-                        last.rect = last.rect.union(&rect);
-                        last.parts.push(cleaned);
-                        last.conf = last.conf.max(line.confidence);
-                        last.line_h = (last.line_h + rect.height) / 2;
-                        continue;
-                    }
-                }
-                let line_h = rect.height;
-                bubbles.push(Bubble {
-                    rect,
-                    parts: vec![cleaned],
-                    conf: line.confidence,
-                    line_h,
-                });
+                candidates.push((rect, cleaned, line.confidence));
             }
+            let bubbles = merge_bubbles(candidates);
             if dump {
                 for bubble in &bubbles {
                     let r = bubble.rect;
@@ -607,9 +584,12 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     missing.push(key);
                 }
             }
-            if missing.len() > settings.max_lines_per_tick {
+            // The setting can raise the batch, never cut the screen in half: a dense page needs
+            // every line translated in the same pass, and the memory makes known lines free.
+            let cap = settings.max_lines_per_tick.max(24);
+            if missing.len() > cap {
                 pending = true;
-                missing.truncate(settings.max_lines_per_tick);
+                missing.truncate(cap);
             }
             if !missing.is_empty() {
                 if settings.translator == "local" {
@@ -617,7 +597,12 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     for key in &missing {
                         match translate_fully(&mut translator, key) {
                             Ok(text) if has_cyrillic(&text) => {
-                                cache.insert(key.clone(), text.clone());
+                                let stored = if echo_of_source(key, &text) {
+                                    String::new()
+                                } else {
+                                    text.clone()
+                                };
+                                cache.insert(key.clone(), stored);
                                 control.inner.translated.fetch_add(1, Ordering::SeqCst);
                                 if settings.context_lines > 0 {
                                     context.push_back((key.clone(), text));
@@ -668,8 +653,13 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     pending = true;
                 }
             }
-            if cache.len() > 2000 {
+            if cache.len() >= saved_entries + 12 {
+                save_memory(&cache, &mut log_file);
+                saved_entries = cache.len();
+            }
+            if cache.len() > 4000 {
                 cache.clear();
+                saved_entries = 0;
             }
 
             // A translation becomes a persistent plate: it follows its source text with
@@ -682,6 +672,11 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     pending = true;
                     continue;
                 };
+                if translated.is_empty() {
+                    // The translator handed the source back unchanged, so this line is a logo or
+                    // a transliterated title. Drawing it would put "СПУК" over the picture.
+                    continue;
+                }
                 match plates.get_mut(&key) {
                     Some(plate) => {
                         plate.target = bubble.rect;
@@ -707,7 +702,7 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     }
                 }
             }
-            plates.retain(|_, plate| now.duration_since(plate.seen) < Duration::from_millis(900));
+            plates.retain(|_, plate| now.duration_since(plate.seen) < Duration::from_millis(420));
             for plate in plates.values_mut() {
                 plate.drawn = lerp_rect(&plate.drawn, &plate.target, 0.35);
                 let score = plate.text.chars().count();
@@ -715,13 +710,17 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                     sample_score = score;
                     sample = clip(&plate.text, 120);
                 }
-                let size = (plate.line_h as f32 * settings.font_scale).clamp(12.0, 32.0) as u32;
-                if dump {
+            }
+            let kept = plate_keys(&plates);
+            if dump {
+                for (key, plate) in &plates {
                     let r = plate.drawn;
+                    let size = (plate.line_h as f32 * settings.font_scale).clamp(12.0, 32.0) as u32;
                     let _ = writeln!(
                         log_file,
-                        "{} plate rect=({},{},{}x{}) font={} text={:?}",
+                        "{} plate{} rect=({},{},{}x{}) font={} text={:?}",
                         stamp(),
+                        if kept.contains(key) { "" } else { " skip=covered" },
                         r.x,
                         r.y,
                         r.width,
@@ -730,13 +729,8 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
                         plate.text
                     );
                 }
-                blocks.push(
-                    OverlayBlock::new(plate.drawn, plate.text.clone())
-                        .with_font(size, FontWeight::Regular, false)
-                        .with_colors(plate.background, plate.foreground)
-                        .with_confidence(plate.conf),
-                );
             }
+            blocks.extend(plate_blocks(&plates, &kept, settings.font_scale));
 
             if blocks.is_empty() {
                 clear(&mut overlay);
@@ -816,10 +810,36 @@ fn loop_forever(app: AppHandle, control: Control, bundled: Option<PathBuf>, sett
             }
             held = sample;
             if !pending {
+                // Between two readings the plates keep sliding: seven 60 Hz steps towards the same
+                // target, so a subtitle that moves on the screen looks animated instead of
+                // jumping once per capture. The compositor damages both the old and the new
+                // position, so nothing is left behind.
+                let keys = plate_keys(&plates);
+                for _ in 0..7 {
+                    let mut moved = false;
+                    for plate in plates.values_mut() {
+                        let next = lerp_rect(&plate.drawn, &plate.target, 0.22);
+                        if next != plate.drawn {
+                            plate.drawn = next;
+                            moved = true;
+                        }
+                    }
+                    if !moved {
+                        break;
+                    }
+                    let layout = OverlayLayout::new(settings.overlay_style)
+                        .with_blocks(plate_blocks(&plates, &keys, settings.font_scale))
+                        .with_opacity(settings.opacity);
+                    let composition = compositor.compose(&frame, &layout);
+                    if show_on(&mut overlay, bounds, &composition.frame, &composition.damage).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(16));
+                }
                 last_sig = sig.clone();
                 last_hwnd = hwnd;
             }
-            std::thread::sleep(Duration::from_millis(if pending { 30 } else { 160 }));
+            std::thread::sleep(Duration::from_millis(if pending { 30 } else { 60 }));
         }
     }
 }
@@ -1043,6 +1063,426 @@ fn clean_line(text: &str) -> String {
         }
     }
     words.join(" ")
+}
+
+/// One speech, not one line: the stacked lines of a subtitle or of a paragraph are one thought,
+/// and translating their fragments separately is what produced the word salad.
+struct Bubble {
+    rect: Rect,
+    parts: Vec<String>,
+    conf: f32,
+    line_h: u32,
+}
+
+/// Groups recognised lines into bubbles. Order-independent on purpose: the previous pass compared
+/// each line with the bubble above it only, so one overlapping pair of boxes — the few pixels by
+/// which OCR boxes of neighbouring subtitle lines overlap — broke the chain and one sentence
+/// became four plates, each translated on its own.
+fn merge_bubbles(mut lines: Vec<(Rect, String, f32)>) -> Vec<Bubble> {
+    lines.sort_by_key(|(rect, _, _)| (rect.y, rect.x));
+    let mut bubbles: Vec<Bubble> = Vec::new();
+    for (rect, text, conf) in lines {
+        let mut best: Option<usize> = None;
+        let mut best_score = i32::MIN;
+        for (index, bubble) in bubbles.iter().enumerate() {
+            let height = bubble.line_h.min(rect.height) as i32;
+            let gap = rect.y - bubble.rect.bottom();
+            if gap > (height / 3).max(8) || gap < -(height * 2 / 5) {
+                continue;
+            }
+            let overlap = (bubble.rect.x + bubble.rect.width as i32)
+                .min(rect.x + rect.width as i32)
+                - bubble.rect.x.max(rect.x);
+            let narrower = bubble.rect.width.min(rect.width) as i32;
+            if overlap * 4 < narrower {
+                continue;
+            }
+            let score = -gap.abs();
+            if score > best_score {
+                best_score = score;
+                best = Some(index);
+            }
+        }
+        match best {
+            Some(index) => {
+                let bubble = &mut bubbles[index];
+                bubble.rect = bubble.rect.union(&rect);
+                bubble.parts.push(text);
+                bubble.conf = bubble.conf.max(conf);
+                bubble.line_h = (bubble.line_h + rect.height) / 2;
+            }
+            None => bubbles.push(Bubble {
+                rect,
+                parts: vec![text],
+                conf,
+                line_h: rect.height,
+            }),
+        }
+    }
+    bubbles
+}
+
+/// A lone read of two letters ("ev]", "PI") is a fragment of an icon or of a neighbouring line,
+/// never a phrase worth a plate.
+fn stray_token(text: &str) -> bool {
+    text.split_whitespace().count() == 1 && text.chars().filter(|ch| ch.is_alphabetic()).count() < 3
+}
+
+/// Addresses and web chrome: a browser paints the page title, the address and its buttons on every
+/// frame, and none of that is part of the picture the owner is watching.
+fn chrome_line(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    ["www.", "http", ".com", ".ru", ".net", ".org"]
+        .iter()
+        .any(|needle| lower.contains(needle))
+}
+
+/// Recognition runs over horizontal bands, and only over the bands whose pixels moved.
+///
+/// The whole frame used to be read again for every tick — a full detector pass over the browser
+/// chrome, the page and the video, twelve hundred milliseconds of it, to notice that one subtitle
+/// line had changed. A dialogue line now costs the band it sits in, and every other band keeps the
+/// reading it already had. Lines are attributed to the band that owns their middle, so a band can
+/// be re-read on its own without duplicating or losing its neighbours.
+struct BandState {
+    sig: Vec<u8>,
+    lines: Vec<Recognition>,
+}
+
+const BANDS: u32 = 12;
+/// A band is read with a margin above and below, because a line's box can start just outside it;
+/// the reading is then filed with the band that owns the line's middle.
+const BAND_PAD: u32 = 18;
+
+fn band_sig(frame: &Frame, top: u32, bottom: u32) -> Vec<u8> {
+    const COLS: u32 = 40;
+    const ROWS: u32 = 5;
+    if frame.width() == 0 || bottom <= top {
+        return Vec::new();
+    }
+    let mut sig = Vec::with_capacity((COLS * ROWS) as usize);
+    for row in 0..ROWS {
+        let y0 = top + row * (bottom - top) / ROWS;
+        let y1 = (top + (row + 1) * (bottom - top) / ROWS).max(y0 + 1).min(bottom);
+        for col in 0..COLS {
+            let x0 = col * frame.width() / COLS;
+            let x1 = ((col + 1) * frame.width() / COLS).max(x0 + 1).min(frame.width());
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            let step_x = ((x1 - x0) / 3).max(1);
+            let step_y = ((y1 - y0) / 2).max(1);
+            let mut y = y0;
+            while y < y1 {
+                let mut x = x0;
+                while x < x1 {
+                    sum += u32::from(lum(frame.pixel(x, y)));
+                    count += 1;
+                    x += step_x;
+                }
+                y += step_y;
+            }
+            sig.push((sum / count.max(1)) as u8);
+        }
+    }
+    sig
+}
+
+fn read_bands(
+    reader: &mut Reader,
+    frame: &Frame,
+    bands: &mut Vec<BandState>,
+    log_file: &mut std::fs::File,
+) -> (Vec<Recognition>, u32) {
+    let height = frame.height();
+    if height == 0 {
+        return (Vec::new(), 0);
+    }
+    if bands.len() != BANDS as usize {
+        bands.clear();
+        bands.resize_with(BANDS as usize, || BandState {
+            sig: Vec::new(),
+            lines: Vec::new(),
+        });
+    }
+    let bounds_of = |index: usize| -> (u32, u32) {
+        let top = index as u32 * height / BANDS;
+        let bottom = (((index as u32 + 1) * height / BANDS).max(top + 1)).min(height);
+        (top, bottom)
+    };
+    let mut changed = vec![false; BANDS as usize];
+    let mut fresh: Vec<Vec<u8>> = Vec::with_capacity(BANDS as usize);
+    for index in 0..BANDS as usize {
+        let (top, bottom) = bounds_of(index);
+        let sig = band_sig(frame, top, bottom);
+        changed[index] = !picture_same(&bands[index].sig, &sig);
+        fresh.push(sig);
+    }
+    // Neighbouring changes become one reading, with a band of slack on each side.
+    let mut regions: Vec<(usize, usize)> = Vec::new();
+    for index in 0..BANDS as usize {
+        if !changed[index] {
+            continue;
+        }
+        let start = index.saturating_sub(1);
+        let end = (index + 1).min(BANDS as usize - 1);
+        match regions.last_mut() {
+            Some(last) if start <= last.1 + 1 => last.1 = last.1.max(end),
+            _ => regions.push((start, end)),
+        }
+    }
+    // Letterbox rows are measured once on the whole picture, where the bars really are.
+    let bars = dark_bars(frame);
+    let mut found: Vec<Vec<Recognition>> = vec![Vec::new(); BANDS as usize];
+    let mut dirty = vec![false; BANDS as usize];
+    let mut spent = 0u32;
+    let mut read_count = 0u32;
+    for (start, end) in regions {
+        let (top, _) = bounds_of(start);
+        let (_, bottom) = bounds_of(end);
+        let top = top.saturating_sub(BAND_PAD);
+        let bottom = (bottom + BAND_PAD).min(height);
+        let band = Rect::new(0, top as i32, frame.width(), bottom - top);
+        let Some(region) = band.clamp_to(&frame.bounds()) else {
+            continue;
+        };
+        let Some(crop) = frame.crop(region) else {
+            continue;
+        };
+        let local: Vec<(u32, u32)> = bars
+            .iter()
+            .filter_map(|(top, bottom)| {
+                let from = (*top as i32 - region.y).max(0) as u32;
+                let to = (*bottom as i32 - region.y).min(region.height as i32).max(0) as u32;
+                (to > from).then_some((from, to))
+            })
+            .collect();
+        let started = Instant::now();
+        match reader.read(&crop, &local) {
+            Ok(lines) => {
+                for mut line in lines {
+                    line.bounds.x += region.x;
+                    line.bounds.y += region.y;
+                    let center = line.bounds.y + line.bounds.height as i32 / 2;
+                    let owner = (((center.max(0) as u32) * BANDS) / height) as usize;
+                    let owner = owner.min(BANDS as usize - 1);
+                    if owner < start || owner > end {
+                        // The margin reaches into a band this reading does not own; that band
+                        // keeps the lines it already has.
+                        continue;
+                    }
+                    found[owner].push(line);
+                }
+                for index in start..=end {
+                    dirty[index] = true;
+                }
+                read_count += (end - start + 1) as u32;
+            }
+            Err(error) => {
+                let _ = writeln!(
+                    log_file,
+                    "{} ocr region ({},{})x{}: {}",
+                    stamp(),
+                    region.x,
+                    region.y,
+                    region.height,
+                    error
+                );
+            }
+        }
+        spent += started.elapsed().as_millis() as u32;
+    }
+    for index in 0..BANDS as usize {
+        bands[index].sig = std::mem::take(&mut fresh[index]);
+        if dirty[index] {
+            bands[index].lines = std::mem::take(&mut found[index]);
+        }
+    }
+    let mut lines = Vec::new();
+    for state in bands.iter() {
+        lines.extend(state.lines.iter().cloned());
+    }
+    let _ = writeln!(
+        log_file,
+        "{} ocr bands={}/{} ms={} lines={}",
+        stamp(),
+        read_count,
+        BANDS,
+        spent,
+        lines.len()
+    );
+    (lines, read_count)
+}
+
+/// Russian letters as a Latin keyboard would type them; used only to compare a translation with
+/// the text it came from.
+fn transliterate(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let low = ch.to_lowercase().next().unwrap_or(ch);
+        match low {
+            'а' => out.push('a'),
+            'б' => out.push('b'),
+            'в' => out.push('v'),
+            'г' => out.push('g'),
+            'д' => out.push('d'),
+            'е' | 'ё' | 'э' => out.push('e'),
+            'ж' => out.push_str("zh"),
+            'з' => out.push('z'),
+            'и' | 'й' => out.push('i'),
+            'к' => out.push('k'),
+            'л' => out.push('l'),
+            'м' => out.push('m'),
+            'н' => out.push('n'),
+            'о' => out.push('o'),
+            'п' => out.push('p'),
+            'р' => out.push('r'),
+            'с' => out.push('s'),
+            'т' => out.push('t'),
+            'у' => out.push('u'),
+            'ф' => out.push('f'),
+            'х' => out.push_str("kh"),
+            'ц' => out.push_str("ts"),
+            'ч' => out.push_str("ch"),
+            'ш' => out.push_str("sh"),
+            'щ' => out.push_str("shch"),
+            'ы' => out.push('y'),
+            'ю' => out.push_str("yu"),
+            'я' => out.push_str("ya"),
+            'ъ' | 'ь' => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn letters_only(text: &str) -> String {
+    text.chars().filter(|ch| ch.is_alphanumeric()).collect()
+}
+
+fn skeleton(text: &str) -> String {
+    text.chars()
+        .filter(|ch| ch.is_alphabetic() && !matches!(ch, 'a' | 'e' | 'i' | 'o' | 'u' | 'y'))
+        .collect()
+}
+
+fn distance(left: &str, right: &str) -> usize {
+    let left: Vec<char> = left.chars().collect();
+    let right: Vec<char> = right.chars().collect();
+    if left.is_empty() {
+        return right.len();
+    }
+    if right.is_empty() {
+        return left.len();
+    }
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    let mut current = vec![0usize; right.len() + 1];
+    for (i, left_char) in left.iter().enumerate() {
+        current[0] = i + 1;
+        for (j, right_char) in right.iter().enumerate() {
+            let cost = usize::from(left_char != right_char);
+            current[j + 1] = (previous[j] + cost)
+                .min(previous[j + 1] + 1)
+                .min(current[j] + 1);
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[right.len()]
+}
+
+/// A stylised logo, a transliterated title and Russian chrome all come back from the translator as
+/// their own letters in Cyrillic: "Makap" gives "Макап", "SPUK" gives "СПУК", the browser's
+/// "TeKCT" gives "Текст". Drawing those puts Russian noise over art nobody asked to cover, which
+/// is exactly the junk plates the owner saw ("СПУК", "АЭТо: Макап", "ПИ"). A translation that is
+/// only the source spelled in Cyrillic is thrown away instead.
+fn echo_of_source(source: &str, translation: &str) -> bool {
+    let source = letters_only(&source.to_lowercase());
+    let reply = letters_only(&transliterate(translation));
+    if source.chars().count() < 2 || reply.chars().count() < 2 {
+        return false;
+    }
+    let source_skeleton = skeleton(&source);
+    if !source_skeleton.is_empty() && source_skeleton == skeleton(&reply) {
+        return true;
+    }
+    // One letter in five may differ: "HOLDINGABOMB" comes back as "ХОЛДИНГАБОМБА", while a real
+    // translation of a loanword ("computer" -> "компьютер") is further away than that.
+    let longest = source.chars().count().max(reply.chars().count());
+    longest >= 4 && distance(&source, &reply) * 5 <= longest
+}
+
+/// Two plates for the same text, or a plate where a larger plate already covers the source, are
+/// the doubled Russian the owner watched drift over one line. The larger plate wins.
+fn plate_keys(plates: &HashMap<String, Plate>) -> Vec<String> {
+    let mut candidates: Vec<(&String, Rect, &str)> = plates
+        .iter()
+        .map(|(key, plate)| (key, plate.drawn, plate.text.as_str()))
+        .collect();
+    candidates.sort_by_key(|(_, rect, _)| std::cmp::Reverse(rect.width.saturating_mul(rect.height)));
+    let mut kept: Vec<(&String, Rect, &str)> = Vec::new();
+    for (key, rect, text) in candidates {
+        if kept.iter().any(|(_, _, other)| *other == text) {
+            continue;
+        }
+        if kept.iter().any(|(_, roof, _)| covered_part(rect, *roof) >= 0.55) {
+            continue;
+        }
+        kept.push((key, rect, text));
+    }
+    kept.into_iter().map(|(key, _, _)| key.clone()).collect()
+}
+
+fn covered_part(rect: Rect, roof: Rect) -> f32 {
+    let Some(overlap) = rect.intersection(&roof) else {
+        return 0.0;
+    };
+    let area = u64::from(rect.width) * u64::from(rect.height);
+    if area == 0 {
+        return 0.0;
+    }
+    (u64::from(overlap.width) * u64::from(overlap.height)) as f32 / area as f32
+}
+
+fn plate_blocks(plates: &HashMap<String, Plate>, kept: &[String], font_scale: f32) -> Vec<OverlayBlock> {
+    let mut ordered: Vec<&Plate> = kept.iter().filter_map(|key| plates.get(key)).collect();
+    ordered.sort_by_key(|plate| (plate.drawn.y, plate.drawn.x));
+    ordered
+        .into_iter()
+        .map(|plate| {
+            let size = (plate.line_h as f32 * font_scale).clamp(12.0, 32.0) as u32;
+            OverlayBlock::new(plate.drawn, plate.text.clone())
+                .with_font(size, FontWeight::Regular, false)
+                .with_colors(plate.background, plate.foreground)
+                .with_confidence(plate.conf)
+        })
+        .collect()
+}
+
+fn memory_path() -> PathBuf {
+    crate::settings::data_dir().join("translations.json")
+}
+
+/// Translations stay on disk between runs. A game, a film or a lesson repeats its lines, and a
+/// known line costs nothing: no request, no wait, the plate is on the screen on the first frame
+/// the text appears.
+fn load_memory() -> HashMap<String, String> {
+    std::fs::read_to_string(memory_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<HashMap<String, String>>(&text).ok())
+        .unwrap_or_default()
+}
+
+fn save_memory(memory: &HashMap<String, String>, log_file: &mut std::fs::File) {
+    let Ok(text) = serde_json::to_string(memory) else {
+        return;
+    };
+    let path = memory_path();
+    let partial = path.with_extension("json.partial");
+    if std::fs::write(&partial, text).is_err() {
+        return;
+    }
+    if std::fs::rename(&partial, &path).is_ok() {
+        let _ = writeln!(log_file, "{} memory saved entries={}", stamp(), memory.len());
+    }
 }
 
 struct Plate {
@@ -1284,16 +1724,6 @@ fn downscale(frame: &Frame) -> (Frame, f32) {
     (small, scale)
 }
 
-fn scale_rect(rect: Rect, scale: f32, width: u32, height: u32) -> Rect {
-    let scaled = Rect::new(
-        (rect.x as f32 * scale) as i32,
-        (rect.y as f32 * scale) as i32,
-        ((rect.width as f32 * scale).round() as u32).max(1),
-        ((rect.height as f32 * scale).round() as u32).max(1),
-    );
-    scaled.clamp_to(&Rect::new(0, 0, width, height)).unwrap_or(scaled)
-}
-
 fn picture_sig(frame: &Frame) -> Vec<u8> {
     const COLS: u32 = 48;
     const ROWS: u32 = 32;
@@ -1510,6 +1940,51 @@ mod tests {
         assert!(!super::chaotic("NOBODYLIKESITDARKER"));
         assert!(!super::chaotic("LKEEPTHINGSTICKINGALONG."));
         assert!(super::chaotic("veppyHuTOxnLEx+"));
+    }
+
+    #[test]
+    fn a_transliterated_logo_is_not_a_translation() {
+        use super::echo_of_source;
+        assert!(echo_of_source("Makap", "Макап"));
+        assert!(echo_of_source("SPUK", "СПУК"));
+        assert!(echo_of_source("PI", "ПИ"));
+        assert!(echo_of_source("5cc BAC", "5cc БАК"));
+        assert!(!echo_of_source("HORSE!", "ЛОШАДЬ!"));
+        assert!(!echo_of_source("WHAT THE", "ЧТО"));
+        assert!(!echo_of_source("computer", "компьютер"));
+        assert!(!echo_of_source("JERRY", "ДЖЕРРИ"));
+    }
+
+    #[test]
+    fn overlapping_subtitle_lines_are_one_bubble() {
+        use super::merge_bubbles;
+        use lumen_core::Rect;
+        let merged = merge_bubbles(vec![
+            (Rect::new(762, 522, 293, 29), "LOSE YOUR WHOLE".to_owned(), 0.80),
+            (Rect::new(772, 546, 276, 77), "DAMN FAMILY".to_owned(), 0.99),
+            (Rect::new(120, 900, 300, 26), "ANOTHER COLUMN".to_owned(), 0.90),
+        ]);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].parts.len(), 2);
+        assert_eq!(merged[1].parts.len(), 1);
+    }
+
+    #[test]
+    fn a_letterbox_floor_is_not_text() {
+        use super::{band_sig, chrome_line, picture_same, stray_token};
+        use lumen_core::Frame;
+        assert!(stray_token("ev]"));
+        assert!(stray_token("PI"));
+        assert!(!stray_token("HORSE!"));
+        assert!(chrome_line("0 www.youtube.com"));
+        assert!(chrome_line("https://example.org/lesson"));
+        assert!(!chrome_line("HORSE!"));
+        let frame = Frame::filled(64, 64, [0, 0, 0, 255]).expect("frame");
+        let sig = band_sig(&frame, 0, 64);
+        assert_eq!(sig.len(), 200);
+        assert!(sig.iter().all(|value| *value == 0));
+        let other = Frame::filled(64, 64, [255, 255, 255, 255]).expect("frame");
+        assert!(!picture_same(&sig, &band_sig(&other, 0, 64)));
     }
 
     #[test]

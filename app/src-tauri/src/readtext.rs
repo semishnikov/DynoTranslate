@@ -30,7 +30,6 @@ const ALPHABET: &str =
 pub struct Reader {
     detect: Session,
     recognize: Session,
-    rec_width: Option<u32>,
     det_failures: u8,
 }
 
@@ -48,12 +47,14 @@ impl Reader {
         Ok(Self {
             detect,
             recognize,
-            rec_width: None,
             det_failures: 0,
         })
     }
 
-    pub fn read(&mut self, frame: &Frame) -> Result<Vec<Recognition>, String> {
+    /// Reads one region of a picture. The caller measures the letterbox bars once on the whole
+    /// frame and hands them in mapped to this region's own coordinates, so a band of a dark game
+    /// is never mistaken for a bar of its own.
+    pub fn read(&mut self, frame: &Frame, bars: &[(u32, u32)]) -> Result<Vec<Recognition>, String> {
         if frame.width() < 8 || frame.height() < 8 {
             return Ok(Vec::new());
         }
@@ -75,15 +76,15 @@ impl Reader {
             }
         };
         let found = match self.recognize_lines(frame, &detected) {
-            Ok(found) if letter_count(&found) >= 3 => return Ok(found),
+            Ok(found) if letter_count(&found) >= 3 => return Ok(in_play_area(bars, found)),
             Ok(found) => found,
             Err(_) => Vec::new(),
         };
         let fallback = self.recognize_lines(frame, &edge_lines(frame))?;
         if letter_count(&fallback) > letter_count(&found) {
-            Ok(fallback)
+            Ok(in_play_area(bars, fallback))
         } else {
-            Ok(found)
+            Ok(in_play_area(bars, found))
         }
     }
 
@@ -132,7 +133,7 @@ impl Reader {
     fn recognize_lines(&mut self, frame: &Frame, lines: &[Rect]) -> Result<Vec<Recognition>, String> {
         let mut found = Vec::new();
         let mut last_error = None;
-        for line in lines.iter().take(36) {
+        for line in lines.iter().take(64) {
             let Some(crop) = frame.crop(*line) else {
                 continue;
             };
@@ -216,19 +217,20 @@ impl Reader {
         Ok((loosen(whole), confidence))
     }
 
+    /// The recogniser reads a crop stretched to 48 px height and keeps its own width.
+    ///
+    /// Squeezing a long line into a narrow tensor is what glued the words together: a 700 px line
+    /// of 19 px text wants about 1700 columns, and at the old 720 cap the gaps between words were
+    /// squeezed away until "LIKE IT IN YOUR OWN HOUSE" came back as "LIKEITINYOUROWNHOUSE". Lines
+    /// are read at their own width now. A failed read is retried on a narrow tensor once, and that
+    /// retry no longer pins every later line to the narrow width.
     fn recognize_crop(&mut self, crop: &Frame) -> Result<(String, f32), String> {
-        let natural = ((48.0 * crop.width() as f32 / crop.height() as f32).ceil() as u32).clamp(8, 720);
+        let natural = ((48.0 * crop.width() as f32 / crop.height() as f32).ceil() as u32).clamp(8, 1600);
         let aligned = natural.div_ceil(8) * 8;
-        if let Some(fixed) = self.rec_width {
-            return self.recognize_at(crop, natural.min(fixed), fixed);
-        }
-        match self.recognize_at(crop, natural, aligned.min(960)) {
+        match self.recognize_at(crop, natural, aligned.min(1600)) {
             Ok(read) => Ok(read),
             Err(error) => match self.recognize_at(crop, natural.min(320), 320) {
-                Ok(read) => {
-                    self.rec_width = Some(320);
-                    Ok(read)
-                }
+                Ok(read) => Ok(read),
                 Err(_) => Err(error),
             },
         }
@@ -428,13 +430,13 @@ fn components(map: &[f32], width: u32, height: u32) -> Vec<Rect> {
                 continue;
             }
             boxes.push(Rect::new(min_x as i32, min_y as i32, box_w, box_h));
-            if boxes.len() >= 80 {
+            if boxes.len() >= 240 {
                 break;
             }
         }
     }
     boxes.sort_by_key(|spot| std::cmp::Reverse(spot.width.saturating_mul(spot.height)));
-    boxes.truncate(40);
+    boxes.truncate(120);
     boxes
 }
 
@@ -620,6 +622,76 @@ fn edge_lines(frame: &Frame) -> Vec<Rect> {
 
 fn luma(pixel: [u8; 4]) -> u8 {
     ((u16::from(pixel[2]) * 77 + u16::from(pixel[1]) * 150 + u16::from(pixel[0]) * 29) / 256) as u8
+}
+
+/// Rows of a letterbox: the black bands a film, a player page or a window's own frame puts above
+/// and below the picture. They carry no text, but the detector finds the odd bright scratch in
+/// them and the recogniser turns it into a word, which is how "Makap", "5cc BAC" and "PI" became
+/// plates over art the owner never asked to have covered. A band qualifies only when every
+/// sampled pixel is nearly black and the whole row is flat: a dark scene is dark, not flat.
+pub fn dark_bars(frame: &Frame) -> Vec<(u32, u32)> {
+    let height = frame.height();
+    if height < 64 {
+        return Vec::new();
+    }
+    let limit = (height / 5).max(16);
+    let mut bars = Vec::new();
+    let mut start: Option<u32> = None;
+    for y in 0..height {
+        let dark = (y < limit || y + limit >= height) && row_is_flat_black(frame, y);
+        match (dark, start) {
+            (true, None) => start = Some(y),
+            (false, Some(from)) => {
+                if y - from >= 10 {
+                    bars.push((from, y));
+                }
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(from) = start {
+        if height - from >= 10 {
+            bars.push((from, height));
+        }
+    }
+    bars
+}
+
+fn row_is_flat_black(frame: &Frame, y: u32) -> bool {
+    let width = frame.width();
+    if width == 0 {
+        return false;
+    }
+    let step = (width / 256).max(2);
+    let mut lowest = 255u8;
+    let mut highest = 0u8;
+    let mut x = 0;
+    while x < width {
+        let value = luma(frame.pixel(x, y));
+        lowest = lowest.min(value);
+        highest = highest.max(value);
+        if highest > 34 {
+            return false;
+        }
+        x += step;
+    }
+    highest.saturating_sub(lowest) <= 14
+}
+
+fn in_play_area(bars: &[(u32, u32)], lines: Vec<Recognition>) -> Vec<Recognition> {
+    if bars.is_empty() {
+        return lines;
+    }
+    lines
+        .into_iter()
+        .filter(|line| {
+            let center = line.bounds.y + line.bounds.height as i32 / 2;
+            !bars
+                .iter()
+                .any(|(top, bottom)| center >= *top as i32 && center < *bottom as i32)
+        })
+        .collect()
 }
 
 fn decode_text(shape: &[i64], scores: &[f32]) -> (String, f32) {
